@@ -1,4 +1,4 @@
-# Detection as Code — Elastic Stack + Terraform
+# Detection as Code — Elastic Security + Terraform
 
 > **A production-ready framework for managing Elastic Security detection rules,
 > exceptions, and prebuilt rules using Terraform — following Elastic's
@@ -12,17 +12,15 @@
 - [Architecture](#architecture)
 - [Project Structure](#project-structure)
 - [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
+- [Getting Started](#getting-started)
 - [Workflow](#workflow)
 - [Terraform Modules](#terraform-modules)
-- [Custom Rules](#custom-rules)
-- [Exception Lists](#exception-lists)
-- [Unit Testing](#unit-testing)
-- [CI/CD Pipeline](#cicd-pipeline)
-- [Detection-Rules CLI Integration](#detection-rules-cli-integration)
-- [Make Targets](#make-targets)
 - [Adding a New Rule](#adding-a-new-rule)
 - [Adding an Exception](#adding-an-exception)
+- [Unit Testing](#unit-testing)
+- [CI/CD Pipeline](#cicd-pipeline)
+- [Upstream Rule Sync](#upstream-rule-sync)
+- [Make Targets](#make-targets)
 - [References](#references)
 
 ---
@@ -35,25 +33,27 @@ Terraform provider. DaC applies software engineering practices — version contr
 peer review, automated testing, and CI/CD pipelines — to security detection rule
 management.
 
-### What's included
+### What's Included
 
 | Component | Purpose |
 |---|---|
-| **Docker Compose** | Local Elasticsearch + Kibana stack for testing |
 | **Terraform Modules** | Reusable modules for detection rules & exception lists |
-| **Custom Rule Definitions** | 5 example rules (KQL, EQL, threshold) with MITRE ATT&CK mapping |
-| **Exception Lists** | 4 exception containers with sample items for false-positive reduction |
-| **Prebuilt Rules** | Optional install & enablement of Elastic's vendor-provided rules |
+| **Custom Rule Definitions** | Example rules (KQL, EQL, threshold) with MITRE ATT&CK mapping |
+| **Exception Lists** | Exception containers with sample items for false-positive reduction |
+| **Prebuilt Rules** | Optional install of Elastic's vendor-provided rules |
 | **Pytest Suite** | Unit tests enforcing Team tags, MITRE mapping, field validation |
 | **GitHub Actions** | CI/CD with `terraform plan` on PRs and `terraform apply` on merge |
-| **detection-rules CLI** | Optional integration with Elastic's open-source DaC tooling |
+| **Interactive Wizards** | `make new-rule` and `make new-exception` for non-coder detection engineers |
+| **Upstream Sync** | Weekly automated sync from Elastic's detection-rules repo |
 
-### Key DaC Principles (from [Elastic's Guide](https://www.elastic.co/security-labs/detection-as-code-timeline-and-new-features))
+### Key DaC Principles
+
+Per [Elastic's DaC guide](https://www.elastic.co/security-labs/detection-as-code-timeline-and-new-features):
 
 - **Version control** — All rules live in Git; every change is tracked
 - **Peer review** — PRs gate all rule changes; plan output is posted as a comment
 - **Automated testing** — Pytest validates rule structure, tags, MITRE mapping
-- **Automated deployment** — Terraform apply on merge to `main`
+- **Automated deployment** — `terraform apply` on merge to `main`
 - **Consistency** — Modules enforce standards across all rules
 - **Team routing** — `Team: <name>` tags on every rule for SOC triage routing
 
@@ -85,9 +85,9 @@ management.
                                     ┌──────────────────────────┐
                                     │     Elastic Security     │
                                     │  ┌────────────────────┐  │
-                                    │  │ Elasticsearch:9200 │  │
-                                    │  │ Kibana:5601        │  │
-                                    │  │ Detection Engine   │  │
+                                    │  │ Elasticsearch       │  │
+                                    │  │ Kibana              │  │
+                                    │  │ Detection Engine    │  │
                                     │  └────────────────────┘  │
                                     └──────────────────────────┘
 ```
@@ -98,58 +98,27 @@ management.
 
 ```
 elastic/
-├── .github/
-│   └── workflows/
-│       └── detection-as-code.yml      # GitHub Actions CI/CD pipeline
+├── .github/workflows/          # CI/CD pipelines
 ├── terraform/
-│   ├── main.tf                        # Provider config + child module calls
-│   ├── variables.tf                   # Root variables
-│   ├── outputs.tf                     # Root outputs
-│   ├── prebuilt_rules.tf              # Elastic prebuilt rule management
-│   ├── terraform.tfvars.example       # Example variable values
+│   ├── main.tf                 # Provider config + child module calls
+│   ├── variables.tf            # Root variables
+│   ├── outputs.tf              # Root outputs
+│   ├── prebuilt_rules.tf       # Elastic prebuilt rule management
 │   ├── modules/
-│   │   ├── detection_rule/            # Reusable module: one detection rule
-│   │   │   ├── main.tf
-│   │   │   ├── variables.tf
-│   │   │   └── outputs.tf
-│   │   └── exception_list/            # Reusable module: one exception list
-│   │       ├── main.tf
-│   │       ├── variables.tf
-│   │       └── outputs.tf
-│   ├── custom_rules/                  # ← One .tf file per detection rule
-│   │   ├── _providers.tf              #   Provider inheritance
-│   │   ├── _template.tf.example       #   Copy-paste starter for new rules
-│   │   ├── variables.tf               #   Shared inputs (space_id, tags)
-│   │   ├── outputs.tf                 #   Aggregated rule outputs
-│   │   ├── 001_brute_force_login.tf
-│   │   ├── 002_suspicious_powershell_encoded.tf
-│   │   ├── 003_lateral_movement_remote_services.tf
-│   │   ├── 004_dns_exfiltration.tf
-│   │   └── 005_suspicious_cron_creation.tf
-│   └── exceptions/                    # ← One .tf file per exception list
-│       ├── _providers.tf
-│       ├── _template.tf.example
-│       ├── variables.tf
-│       ├── outputs.tf
-│       ├── 001_trusted_infrastructure.tf
-│       ├── 002_approved_powershell.tf
-│       ├── 003_dns_allowlist.tf
-│       └── 004_approved_cron.tf
-├── tests/
-│   ├── test_rules.py                  # Pytest unit tests for rules
-│   └── requirements.txt               # Python test dependencies
-├── scripts/
-│   ├── setup.sh                       # Bootstrap the lab environment
-│   ├── teardown.sh                    # Destroy everything
-│   ├── validate.sh                    # Quick health check
-│   └── dac-sync.sh                    # detection-rules CLI integration
-├── docker-compose.yml                 # Elasticsearch + Kibana containers
-├── Makefile                           # Shortcut targets
-├── pytest.ini                         # Pytest configuration
-├── .env.example                       # Environment variable template
-├── .gitignore
-└── README.md                          # This file
+│   │   ├── detection_rule/     # Reusable module: one detection rule
+│   │   └── exception_list/     # Reusable module: one exception list + items
+│   ├── custom_rules/           # One numbered .tf file per detection rule
+│   └── exceptions/             # One numbered .tf file per exception list
+├── tests/                      # Pytest unit tests
+├── scripts/                    # Setup, teardown, sync, wizards
+├── docker-compose.yml          # Local dev stack (optional)
+├── Makefile                    # Shortcut targets
+└── README.md
 ```
+
+**Convention:** Rule and exception files use a numbered prefix (`001_`, `002_`, …)
+for visual ordering. Copy `_template.tf.example` in the respective directory to
+add a new one, or use the interactive wizards (`make new-rule` / `make new-exception`).
 
 ---
 
@@ -157,15 +126,16 @@ elastic/
 
 | Tool | Version | Purpose |
 |---|---|---|
-| [Docker](https://docs.docker.com/get-docker/) | 20+ | Run Elasticsearch + Kibana locally |
 | [Terraform](https://developer.hashicorp.com/terraform/downloads) | ≥ 1.5 | Infrastructure as Code engine |
-| [Python](https://www.python.org/) | ≥ 3.10 | Run unit tests |
+| [Python](https://www.python.org/) | ≥ 3.9 | Run unit tests |
 | [Make](https://www.gnu.org/software/make/) | any | Task runner (optional) |
-| [detection-rules](https://github.com/elastic/detection-rules) | latest | CLI import/export (optional) |
+
+You'll also need network access to an **Elasticsearch** and **Kibana** instance
+(cloud, on-prem, or local Docker).
 
 ---
 
-## Quick Start
+## Getting Started
 
 ### 1. Clone and configure
 
@@ -175,11 +145,12 @@ cd elastic
 cp .env.example .env          # Review and adjust credentials
 ```
 
-### 2. Bootstrap the lab
+### 2. Initialise Terraform
 
 ```bash
-make setup
-# This starts Docker, configures passwords, and runs terraform init
+# Point to your Elastic cluster (edit .env or terraform.tfvars)
+cd terraform
+terraform init
 ```
 
 ### 3. Run unit tests
@@ -188,28 +159,35 @@ make setup
 make test
 ```
 
-### 4. Preview changes
+### 4. Preview and deploy
 
 ```bash
-make plan
+make plan                     # Review what will change
+make apply                    # Deploy rules + exceptions
 ```
 
-### 5. Deploy rules
+### 5. Verify in Kibana
+
+Navigate to your Kibana instance → **Security** → **Rules** to see deployed
+detection rules and exceptions.
+
+<details>
+<summary><strong>🐳 Local Demo with Docker</strong> (click to expand)</summary>
+
+A `docker-compose.yml` is included for standing up a local single-node
+Elasticsearch + Kibana stack for testing purposes.
 
 ```bash
-make apply
+make setup                    # Starts Docker stack + terraform init
+make validate-lab             # Health check ES, Kibana, rules
+make teardown                 # Destroy everything when done
 ```
 
-### 6. Verify deployment
+Default credentials: `elastic` / `changeme` (see `.env.example`).
 
-```bash
-make validate-lab
-```
+Kibana will be available at http://localhost:5601.
 
-### 7. Open Kibana
-
-Navigate to http://localhost:5601 → **Security** → **Rules** to see your
-deployed detection rules and exceptions.
+</details>
 
 ---
 
@@ -218,7 +196,8 @@ deployed detection rules and exceptions.
 ### Local Development
 
 ```
-Copy _template.tf.example → terraform/custom_rules/my_rule.tf
+Copy _template.tf.example → terraform/custom_rules/NNN_my_rule.tf
+  (or run: make new-rule)
          │
          ▼
     make test          ← Pytest validates rule structure
@@ -227,39 +206,28 @@ Copy _template.tf.example → terraform/custom_rules/my_rule.tf
     make plan          ← Preview Terraform changes
          │
          ▼
-    make apply         ← Deploy to local Docker stack
-         │
-         ▼
-    make validate-lab  ← Verify rules in Kibana
+    make apply         ← Deploy to Elastic Security
 ```
 
-### CI/CD (Pull Request)
+### CI/CD (Pull Request → Merge)
 
 ```
 Push branch → Open PR
-         │
-         ▼
-    GitHub Actions triggers
          │
     ┌────┴─────────────────┐
     │ terraform fmt -check │
     │ terraform validate   │
     │ terraform plan       │
+    │ pytest tests         │
     └────┬─────────────────┘
          │
-         ▼
     Plan output posted as PR comment
-```
-
-### CI/CD (Merge to main)
-
-```
-PR merged to main
+         │
+    PR merged to main
          │
          ▼
     terraform apply -auto-approve
          │
-         ▼
     Rules deployed to Elastic Security
 ```
 
@@ -270,8 +238,11 @@ PR merged to main
 ### `detection_rule`
 
 Wraps [`elasticstack_kibana_security_detection_rule`](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_security_detection_rule).
-Creates **one** detection rule per module call — designed to be called from
-individual `.tf` files in `custom_rules/`.
+Creates **one** detection rule per module call from individual `.tf` files in
+`custom_rules/`.
+
+<details>
+<summary>Module interface</summary>
 
 | Input | Type | Description |
 |---|---|---|
@@ -282,10 +253,16 @@ individual `.tf` files in `custom_rules/`.
 | `language` | `string` | Query language (kuery, lucene, eql, esql) |
 | `severity` | `string` | low / medium / high / critical |
 | `risk_score` | `number` | 0–100 |
-| `tags` | `list(string)` | Tags including Team: tag |
+| `tags` | `list(string)` | Must include a `Team:` tag |
 | `threat` | `list(object)` | MITRE ATT&CK mapping |
+| `enabled` | `bool` | Enable the rule on deploy (default: `true`) |
+| `threshold` | `object` | Threshold config (for threshold rules) |
+| `alert_suppression` | `object` | Alert suppression config |
+| `exceptions_list` | `list(object)` | Exception list references |
 | `space_id` | `string` | Kibana space ID |
-| `enabled` | `bool` | Enable the rule on creation (default: true) |
+
+See `modules/detection_rule/variables.tf` for the full list of optional inputs
+(indices, scheduling, ML job IDs, new terms fields, timeline, etc.).
 
 | Output | Description |
 |---|---|
@@ -293,10 +270,16 @@ individual `.tf` files in `custom_rules/`.
 | `id` | Terraform resource ID |
 | `name` | Rule name |
 
+</details>
+
 ### `exception_list`
 
-Wraps [`elasticstack_kibana_security_exception_list`](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_security_exception_list) and [`elasticstack_kibana_security_exception_item`](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_security_exception_item).
-Creates **one** exception list (with child items) per module call.
+Wraps [`elasticstack_kibana_security_exception_list`](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_security_exception_list)
+and [`elasticstack_kibana_security_exception_item`](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_security_exception_item).
+Creates **one** exception list container with child items per module call.
+
+<details>
+<summary>Module interface</summary>
 
 | Input | Type | Description |
 |---|---|---|
@@ -306,240 +289,27 @@ Creates **one** exception list (with child items) per module call.
 | `items` | `list(object)` | Exception items with entries |
 | `space_id` | `string` | Kibana space ID |
 
+See `modules/exception_list/variables.tf` for the full interface including
+`namespace_type`, `os_types`, `tags`, and item-level options.
+
 | Output | Description |
 |---|---|
 | `list_id` | Kibana list_id |
 | `id` | Terraform resource ID |
-| `item_ids` | Map of item name → Kibana item_id |
+| `item_ids` | Map of item_id → Kibana ID |
 
----
-
-## Custom Rules
-
-Each detection rule lives in its own `.tf` file inside
-[`terraform/custom_rules/`](terraform/custom_rules/). Each file contains a
-single `module` block that calls the reusable `detection_rule` module. This
-scales cleanly to 200+ rules — engineers copy
-[`_template.tf.example`](terraform/custom_rules/_template.tf.example) and fill
-in their rule parameters.
-
-### Included example rules
-
-| # | Name | Type | Severity | MITRE Tactic |
-|---|---|---|---|---|
-| 1 | Brute-Force Login Attempts | threshold | high | Credential Access (T1110) |
-| 2 | Suspicious PowerShell Encoded Command | query | high | Execution (T1059.001) |
-| 3 | Lateral Movement via Remote Service Creation | eql | critical | Lateral Movement (T1021) |
-| 4 | Potential Data Exfiltration over DNS | query | medium | Exfiltration (T1048) |
-| 5 | Suspicious Cron Job Created | query | medium | Persistence (T1053.003) |
-
-### Team tag convention
-
-Per [Elastic's DaC guide](https://www.elastic.co/security-labs/detection-as-code-timeline-and-new-features),
-every custom rule includes a `Team: <team_name>` tag for SOC routing:
-
-```hcl
-tags = ["windows", "powershell", "Team: Threat Intel"]
-```
-
-This is enforced by the pytest test suite (see [Unit Testing](#unit-testing)).
-
----
-
-## Exception Lists
-
-Each exception list lives in its own `.tf` file inside
-[`terraform/exceptions/`](terraform/exceptions/). Each file contains a single
-`module` block calling the `exception_list` module. Copy
-[`_template.tf.example`](terraform/exceptions/_template.tf.example) to add a
-new list.
-
-### Included example exceptions
-
-| List | Items | Purpose |
-|---|---|---|
-| Trusted Internal Infrastructure | LB health checks, monitoring svc account | Suppress auth-failure false positives |
-| Approved PowerShell Automation | SCCM client, Intune management | Suppress encoded PS false positives |
-| DNS Allowlist | CDN domains, SaaS domains | Suppress DNS tunnel false positives |
-| Approved Cron Jobs | deploy user | Suppress cron persistence false positives |
-
----
-
-## Unit Testing
-
-The pytest test suite in [`tests/test_rules.py`](tests/test_rules.py) validates
-rule definitions **before** they reach Terraform, catching errors at the PR
-stage.
-
-### Test coverage
-
-| Test Class | What it checks |
-|---|---|
-| `TestRequiredFields` | Every rule has name, description, type, severity, risk_score |
-| `TestTeamTag` | Every rule has a `Team: <team_name>` tag |
-| `TestMitreMapping` | Every rule maps to ≥1 MITRE ATT&CK tactic with valid ID |
-| `TestRiskScore` | Risk score is between 0–100 |
-| `TestSeverity` | Severity is low/medium/high/critical |
-| `TestRuleType` | Rule type is a supported Elastic type |
-| `TestQueryPresence` | Query-based rules have a query field |
-| `TestExceptionLists` | Exception lists & items have required fields and entries |
-
-### Running tests
-
-```bash
-make test              # Quick run
-make test-verbose      # Full output with tracebacks
-```
-
----
-
-## CI/CD Pipeline
-
-The GitHub Actions workflow at [`.github/workflows/detection-as-code.yml`](.github/workflows/detection-as-code.yml)
-implements a two-stage pipeline:
-
-### Stage 1: Plan (on every PR)
-
-1. `terraform fmt -check` — Enforce formatting
-2. `terraform init` — Initialise providers
-3. `terraform validate` — Validate HCL syntax
-4. `terraform plan` — Generate execution plan
-5. **Comment** plan output on the PR for peer review
-
-### Stage 2: Apply (on merge to `main`)
-
-1. Download the plan artifact from Stage 1
-2. `terraform apply` — Deploy rules to Elastic Security
-
-### Required GitHub Secrets
-
-| Secret | Description |
-|---|---|
-| `ELASTICSEARCH_USERNAME` | Elasticsearch username |
-| `ELASTICSEARCH_PASSWORD` | Elasticsearch password |
-| `ELASTICSEARCH_ENDPOINTS` | Comma-separated ES endpoints |
-| `KIBANA_USERNAME` | Kibana username |
-| `KIBANA_PASSWORD` | Kibana password |
-| `KIBANA_ENDPOINT` | Kibana URL |
-
----
-
-## Upstream Rule Sync
-
-A **weekly GitHub Action** automatically pulls the latest from
-[`elastic/detection-rules`](https://github.com/elastic/detection-rules), diffs
-the TOML rule files against the last sync point, and opens a PR with a rich
-changelog.
-
-### How it works
-
-```
-elastic/detection-rules (GitHub)
-         │
-    weekly cron (Monday 08:00 UTC)
-    or manual workflow_dispatch
-         │
-         ▼
-  scripts/sync_upstream_rules.py
-         │
-    ┌─────┴──────────────────────────┐
-    │ 1. Clone/fetch upstream repo   │
-    │ 2. Diff TOML files vs last SHA │
-    │ 3. Parse rule metadata         │
-    │ 4. Generate changelog entry    │
-    │ 5. Update tracking file        │
-    └─────┬──────────────────────────┘
-         │
-         ▼
-  PR opened with:
-    • UPSTREAM_CHANGELOG.md (prepended entry)
-    • .detection-rules-sync (updated SHA)
-```
-
-### Changelog format
-
-Each sync generates a timestamped entry in `UPSTREAM_CHANGELOG.md` with:
-
-- **New rules** — name, type, severity, MITRE ATT&CK tactic(s), file path
-- **Modified rules** — same detail columns for changed rules
-- **Removed rules** — file paths of deleted rules
-
-### Running locally
-
-```bash
-make sync-upstream       # Full sync (updates tracking file)
-make sync-upstream-dry   # Dry run (changelog only, no tracking update)
-make sync-upstream-full  # First-time: catalog all existing upstream rules
-```
-
-### First-time setup
-
-On the first run, the script establishes a **baseline SHA** without generating
-a massive changelog of 1000+ existing rules. Subsequent runs will only report
-changes since that baseline. Use `--first-sync-full` if you want the initial
-full catalog.
-
----
-
-## Detection-Rules CLI Integration
-
-For teams that also use Elastic's [`detection-rules`](https://github.com/elastic/detection-rules)
-Python CLI (the same tooling Elastic uses internally), we provide an integration
-script at [`scripts/dac-sync.sh`](scripts/dac-sync.sh).
-
-This is **complementary** to the Terraform approach — useful for:
-- Bulk exporting existing rules from Kibana to TOML files
-- Importing TOML-formatted rules alongside Terraform-managed ones
-- Leveraging Elastic's built-in rule validation and schema checking
-
-```bash
-# Export custom rules from Kibana to local TOML files
-make dac-export
-
-# Import local TOML rules to Kibana
-make dac-import
-
-# Initialise a custom rules directory for the CLI
-make dac-setup
-```
-
----
-
-## Make Targets
-
-| Target | Description |
-|---|---|
-| `make setup` | Full lab bootstrap (Docker + Terraform init) |
-| `make teardown` | Destroy everything |
-| `make plan` | Terraform plan |
-| `make apply` | Terraform apply |
-| `make destroy` | Terraform destroy |
-| `make test` | Run pytest unit tests |
-| `make validate-lab` | Health check (ES, Kibana, rules, exceptions) |
-| `make ci` | Full CI pipeline locally (fmt → validate → test → plan) |
-| `make docker-up` | Start Docker stack only |
-| `make docker-down` | Stop Docker stack |
-| `make docker-logs` | Follow Docker logs |
-| `make fmt` | Format Terraform files |
-| `make new-rule` | 🧙 Interactive wizard — create a new detection rule |
-| `make new-exception` | 🧙 Interactive wizard — create a new exception list |
-| `make cheatsheet` | 📋 Print quick-reference card to terminal |
-| `make sync-upstream` | Sync from elastic/detection-rules and update changelog |
-| `make sync-upstream-dry` | Dry-run sync (no tracking file update) |
-| `make sync-upstream-full` | First-time sync cataloging all upstream rules |
-| `make dac-export` | Export rules via detection-rules CLI |
-| `make dac-import` | Import rules via detection-rules CLI |
+</details>
 
 ---
 
 ## Adding a New Rule
 
 > **🧙 Recommended:** Run `make new-rule` — an interactive wizard that prompts
-> for every field, auto-generates the `.tf` file, and updates `outputs.tf` for
-> you. No HCL editing required. The manual steps below are an alternative.
+> for every field in plain English, auto-generates the `.tf` file, and updates
+> `outputs.tf`. No HCL knowledge required.
 
 <details>
-<summary>Manual steps (click to expand)</summary>
+<summary>Manual steps</summary>
 
 1. **Copy** the template (use the next available number):
    ```bash
@@ -549,7 +319,7 @@ make dac-setup
 
 2. **Edit** the new file — fill in the module block:
    ```hcl
-   module "rule_my_new_rule" {
+   module "my_new_rule" {
      source = "../modules/detection_rule"
 
      name        = "My New Detection Rule"
@@ -573,14 +343,15 @@ make dac-setup
    }
    ```
 
-3. **Register the output** — add an entry to `terraform/custom_rules/outputs.tf`:
+3. **Register the output** in `terraform/custom_rules/outputs.tf`:
    ```hcl
-   my_new_rule = module.rule_my_new_rule.rule_id
+   my_new_rule = module.my_new_rule.rule_id
    ```
 
-4. **Run tests** to validate: `make test`
-5. **Preview**: `make plan`
-6. **Deploy**: `make apply` (or push a PR for CI/CD)
+4. **Test → Plan → Deploy:**
+   ```bash
+   make test && make plan && make apply
+   ```
 
 </details>
 
@@ -589,21 +360,21 @@ make dac-setup
 ## Adding an Exception
 
 > **🧙 Recommended:** Run `make new-exception` — an interactive wizard that
-> walks you through creating an exception list with items. No HCL editing
-> required. The manual steps below are an alternative.
+> walks you through creating an exception list with items. No HCL knowledge
+> required.
 
 <details>
-<summary>Manual steps (click to expand)</summary>
+<summary>Manual steps</summary>
 
-1. **Copy** the template (use the next available number):
+1. **Copy** the template:
    ```bash
    cp terraform/exceptions/_template.tf.example \
-      terraform/exceptions/005_my_exception_list.tf
+      terraform/exceptions/005_my_exception.tf
    ```
 
-2. **Edit** the new file — fill in the module block:
+2. **Edit** the new file:
    ```hcl
-   module "exception_my_list" {
+   module "my_exception" {
      source = "../modules/exception_list"
 
      list_id     = "my-exceptions"
@@ -613,6 +384,7 @@ make dac-setup
 
      items = [
        {
+         item_id     = "trusted-process"
          name        = "Trusted Process"
          description = "Skip alerts for trusted-process.exe"
          entries = [{
@@ -626,30 +398,162 @@ make dac-setup
    }
    ```
 
-3. **Register the output** — add an entry to `terraform/exceptions/outputs.tf`:
+3. **Register the output** in `terraform/exceptions/outputs.tf`:
    ```hcl
-   my_list = module.exception_my_list.list_id
+   my_exception = module.my_exception.list_id
    ```
 
-4. **Link** the exception list to a rule via the `exceptions_list` attribute
-5. **Test → Plan → Apply**
+4. **Test → Plan → Deploy:**
+   ```bash
+   make test && make plan && make apply
+   ```
 
 </details>
 
 ---
 
+## Unit Testing
+
+The pytest suite in `tests/test_rules.py` validates rule and exception
+definitions **before** they reach Terraform — catching structural errors at the
+PR stage.
+
+<details>
+<summary>Test coverage details</summary>
+
+| Test | What it checks |
+|---|---|
+| Required fields | Every rule has name, description, type, severity, risk_score |
+| Team tag | Every rule has a `Team: <name>` tag |
+| MITRE mapping | Every rule maps to ≥1 ATT&CK tactic with valid ID format |
+| Risk score range | 0–100 |
+| Severity values | low / medium / high / critical |
+| Rule types | Supported Elastic type |
+| Query presence | Query-based rules include a query field |
+| Exception structure | Lists & items have required fields and entries |
+
+</details>
+
+```bash
+make test              # Quick run
+make test-verbose      # Full output with tracebacks
+```
+
+---
+
+## CI/CD Pipeline
+
+GitHub Actions workflows in `.github/workflows/` implement the full DaC
+lifecycle.
+
+<details>
+<summary>Pipeline details</summary>
+
+### detection-as-code.yml
+
+**On PR:** `terraform fmt -check` → `terraform init` → `terraform validate` →
+`terraform plan` → post plan output as PR comment.
+
+**On merge to `main`:** `terraform apply -auto-approve`.
+
+### Required GitHub Secrets
+
+| Secret | Description |
+|---|---|
+| `ELASTICSEARCH_USERNAME` | Elasticsearch username |
+| `ELASTICSEARCH_PASSWORD` | Elasticsearch password |
+| `ELASTICSEARCH_ENDPOINTS` | Comma-separated ES endpoints |
+| `KIBANA_USERNAME` | Kibana username |
+| `KIBANA_PASSWORD` | Kibana password |
+| `KIBANA_ENDPOINT` | Kibana URL |
+
+</details>
+
+---
+
+## Upstream Rule Sync
+
+A weekly GitHub Action pulls the latest from
+[`elastic/detection-rules`](https://github.com/elastic/detection-rules), diffs
+TOML rule files against the last sync point, and opens a PR with a rich
+changelog.
+
+<details>
+<summary>Sync details</summary>
+
+### How it works
+
+1. Clones/fetches the upstream `elastic/detection-rules` repo
+2. Diffs TOML rule files since the last tracked SHA
+3. Generates a timestamped changelog entry (new / modified / removed rules)
+4. Opens a PR with the changelog for review
+
+### Running locally
+
+```bash
+make sync-upstream       # Full sync (updates tracking file)
+make sync-upstream-dry   # Dry run (changelog only, no tracking update)
+make sync-upstream-full  # First-time: catalog all existing upstream rules
+```
+
+On first run the script establishes a **baseline SHA** without generating a
+massive changelog. Subsequent runs only report changes since that baseline.
+
+</details>
+
+---
+
+## Make Targets
+
+<details>
+<summary>Full target reference</summary>
+
+| Target | Description |
+|---|---|
+| `make setup` | Full lab bootstrap (Docker + Terraform init) |
+| `make teardown` | Destroy everything |
+| `make plan` | Terraform plan |
+| `make apply` | Terraform apply |
+| `make destroy` | Terraform destroy |
+| `make test` | Run pytest unit tests |
+| `make test-verbose` | Tests with full output |
+| `make validate-lab` | Health check (ES, Kibana, rules, exceptions) |
+| `make ci` | Full CI pipeline locally (fmt → validate → test → plan) |
+| `make fmt` | Format Terraform files |
+| `make new-rule` | 🧙 Interactive wizard — create a new detection rule |
+| `make new-exception` | 🧙 Interactive wizard — create a new exception list |
+| `make cheatsheet` | 📋 Print quick-reference card to terminal |
+| `make sync-upstream` | Sync from elastic/detection-rules |
+| `make sync-upstream-dry` | Dry-run sync (no tracking update) |
+| `make sync-upstream-full` | First-time full catalog sync |
+| `make docker-up` | Start local Docker stack |
+| `make docker-down` | Stop local Docker stack |
+| `make docker-logs` | Follow Docker logs |
+| `make dac-export` | Export rules via detection-rules CLI |
+| `make dac-import` | Import rules via detection-rules CLI |
+
+</details>
+
+The most common day-to-day targets:
+
+```bash
+make new-rule         # Create a rule (interactive)
+make test             # Validate
+make plan             # Preview
+make apply            # Deploy
+```
+
+---
+
 ## References
 
-- **[Elastic's DaC Engineer Guide](https://www.elastic.co/security-labs/detection-as-code-timeline-and-new-features)** — The primary methodology guide for this project
-- **[DaC Reference Documentation](https://dac-reference.readthedocs.io/en/latest/)** — Elastic's extended implementation guidance
-- **[elastic/detection-rules](https://github.com/elastic/detection-rules)** — Elastic's open-source rule repository and CLI
-- **[elasticstack Terraform Provider](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs)** — Provider documentation
-- **[Detection Rule Resource](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_security_detection_rule)** — Terraform resource for detection rules
-- **[Exception List Resource](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_security_exception_list)** — Terraform resource for exception lists
-- **[Exception Item Resource](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_security_exception_item)** — Terraform resource for exception items
-- **[Prebuilt Rules Resource](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_install_prebuilt_rules)** — Install Elastic's vendor rules via Terraform
-- **[Elastic DaC Slack Channel](https://elasticstack.slack.com/archives/C06TE19EP09)** — Community support
-- **[Instruqt DaC Training](https://play.instruqt.com/elastic/invite/uqlknuayvxhy)** — Hands-on lab from Elastic
+- [Elastic's DaC Engineer Guide](https://www.elastic.co/security-labs/detection-as-code-timeline-and-new-features) — Primary methodology guide
+- [DaC Reference Documentation](https://dac-reference.readthedocs.io/en/latest/) — Extended implementation guidance
+- [elastic/detection-rules](https://github.com/elastic/detection-rules) — Elastic's open-source rule repo and CLI
+- [elasticstack Terraform Provider](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs) — Provider documentation
+- [Detection Rule Resource](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_security_detection_rule) — TF resource docs
+- [Exception List Resource](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_security_exception_list) — TF resource docs
+- [Prebuilt Rules Resource](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_install_prebuilt_rules) — TF resource docs
 
 ---
 
