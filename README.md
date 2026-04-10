@@ -57,6 +57,27 @@ Per [Elastic's DaC guide](https://www.elastic.co/security-labs/detection-as-code
 - **Consistency** — Modules enforce standards across all rules
 - **Team routing** — `Team: <name>` tags on every rule for SOC triage routing
 
+### What Terraform Manages (and What It Doesn't)
+
+A common concern is that adopting DaC means managing **everything** in Terraform.
+That's not the case. This framework deliberately splits responsibilities between
+Terraform and Kibana based on what each tool does best:
+
+| Responsibility | Managed in | Why |
+|---|---|---|
+| **Custom detection rules** | Terraform (`custom_rules/`) | Your org writes these — they need version control, peer review, and CI/CD |
+| **Exception lists** | Terraform (`exceptions/`) | Suppression logic is critical context that should be reviewed and tracked in Git |
+| **Prebuilt rule installation & updates** | Terraform (`prebuilt_rules.tf`) | Keeps vendor rules current automatically across environments |
+| **Prebuilt rule enablement** | Kibana Rules UI | Kibana has purpose-built filtering, bulk actions, and tag-based selection for this — no need to replicate it in code |
+| **Alert triage & investigation** | Kibana Security app | Operational work that doesn't belong in code |
+| **Dashboard & visualization** | Kibana | UI-native, not infrastructure |
+
+**The bottom line:** Terraform owns the things that benefit from code review and
+version history (custom rules, exceptions, prebuilt rule updates). Kibana owns
+the operational decisions (which prebuilt rules to enable, alert triage,
+dashboards). Detection engineers do **not** need to manage 1,400+ prebuilt rules
+in `.tf` files.
+
 ---
 
 ## Architecture
