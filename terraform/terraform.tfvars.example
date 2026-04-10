@@ -15,6 +15,29 @@ environment     = "dev"
 
 install_prebuilt_rules = true
 
+# ---------------------------------------------------------------------------
+# Prebuilt rule categories to ENABLE (all others remain installed but off).
+# Uncomment the categories relevant to your environment.
+# Removing an entry here will DISABLE those rules on the next apply.
+# ---------------------------------------------------------------------------
+enabled_prebuilt_rule_tags = {
+  # -- OS ---------------------------------------------------------------
+  # windows = { key = "OS", value = "Windows" }
+  # linux   = { key = "OS", value = "Linux" }
+  # macos   = { key = "OS", value = "macOS" }
+
+  # -- Data Sources ----------------------------------------------------
+  # elastic_defend = { key = "Data Source", value = "Elastic Defend" }
+  # aws            = { key = "Data Source", value = "AWS" }
+  # azure          = { key = "Data Source", value = "Azure" }
+  # gcp            = { key = "Data Source", value = "GCP" }
+  # m365           = { key = "Data Source", value = "Microsoft 365" }
+  # okta           = { key = "Data Source", value = "Okta" }
+
+  # -- Use Case --------------------------------------------------------
+  # threat_detection = { key = "Use Case", value = "Threat Detection" }
+}
+
 default_rule_tags = [
   "detection-as-code",
   "terraform-managed",

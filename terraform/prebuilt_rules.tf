@@ -1,12 +1,13 @@
 # =============================================================================
 # Prebuilt Detection Rules — Elastic Vendor-Provided
 # =============================================================================
-# Installs and enables Elastic's prebuilt detection rules.  These are
-# maintained by Elastic's Threat Research team in:
-#   https://github.com/elastic/detection-rules
+# Installs Elastic's prebuilt detection rules (maintained by Elastic's Threat
+# Research team at https://github.com/elastic/detection-rules).
 #
-# This resource installs ALL available prebuilt rules and keeps them updated.
-# Individual rules are then selectively enabled below by tag.
+# ENABLE/DISABLE is driven entirely by `var.enabled_prebuilt_rule_tags`.
+# - Adding an entry to the map  → enables that rule category on next apply.
+# - Removing an entry           → disables it (via disable_on_destroy).
+# - Empty map                   → all prebuilt rules remain installed but disabled.
 #
 # Resource docs:
 #   https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_install_prebuilt_rules
@@ -14,7 +15,7 @@
 # =============================================================================
 
 # ---------------------------------------------------------------------------
-# Install / update all prebuilt rules
+# Install / update all prebuilt rules (does NOT enable them)
 # ---------------------------------------------------------------------------
 resource "elasticstack_kibana_install_prebuilt_rules" "elastic" {
   count    = var.install_prebuilt_rules ? 1 : 0
@@ -22,66 +23,38 @@ resource "elasticstack_kibana_install_prebuilt_rules" "elastic" {
 }
 
 # ---------------------------------------------------------------------------
-# Enable prebuilt rules by OS platform
+# Selectively enable prebuilt rules by tag
 # ---------------------------------------------------------------------------
-# Each block enables all prebuilt rules that carry the given tag.
-# Add or remove blocks as needed for your environment.
+# This single resource block replaces all hardcoded enable blocks.
+# It iterates over var.enabled_prebuilt_rule_tags — the ONLY source of truth
+# for which prebuilt rule categories are active.
 #
-# Docs: Rules are tagged by Elastic with "OS: Windows", "OS: Linux", etc.
-# See:  https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_security_enable_rule
+# Available tag keys and example values (from Elastic's tagging):
+#
+#   Key             Example values
+#   ──────────────  ────────────────────────────────────────────────
+#   OS              Windows, Linux, macOS
+#   Data Source     Elastic Defend, Elastic Endgame, AWS,
+#                   Azure, GCP, Google Workspace, Microsoft 365,
+#                   Okta, GitHub, Network, APM
+#   Use Case        Threat Detection, UEBA, Asset Visibility,
+#                   Log Auditing, Identity and Access Audit
+#   Tactic          Credential Access, Defense Evasion, Discovery,
+#                   Execution, Exfiltration, Impact, Initial Access,
+#                   Lateral Movement, Persistence, Privilege Escalation,
+#                   Collection, Command and Control, Reconnaissance,
+#                   Resource Development
+#   Domain          Endpoint, Cloud, Network
 # ---------------------------------------------------------------------------
+resource "elasticstack_kibana_security_enable_rule" "prebuilt" {
+  for_each = var.install_prebuilt_rules ? var.enabled_prebuilt_rule_tags : {}
 
-# Windows endpoint rules
-#   Covers: credential access, execution, lateral movement, persistence, etc.
-#   NOTE: Bulk enable-by-tag can timeout in small Docker environments with
-#         1000+ prebuilt rules. Uncomment when running against a production
-#         cluster or enable rules manually in Kibana UI.
-# resource "elasticstack_kibana_security_enable_rule" "enable_windows" {
-#   count    = var.install_prebuilt_rules ? 1 : 0
-#   space_id = var.kibana_space_id
-#   key      = "OS"
-#   value    = "Windows"
-#
-#   depends_on = [elasticstack_kibana_install_prebuilt_rules.elastic]
-# }
+  space_id           = var.kibana_space_id
+  key                = each.value.key
+  value              = each.value.value
+  disable_on_destroy = true
 
-# Linux endpoint rules
-#   Covers: persistence, privilege escalation, defense evasion, etc.
-# resource "elasticstack_kibana_security_enable_rule" "enable_linux" {
-#   count    = var.install_prebuilt_rules ? 1 : 0
-#   space_id = var.kibana_space_id
-#   key      = "OS"
-#   value    = "Linux"
-#
-#   depends_on = [elasticstack_kibana_install_prebuilt_rules.elastic]
-# }
-
-# macOS endpoint rules
-#   Covers: execution, persistence, collection, etc.
-# resource "elasticstack_kibana_security_enable_rule" "enable_macos" {
-#   count    = var.install_prebuilt_rules ? 1 : 0
-#   space_id = var.kibana_space_id
-#   key      = "OS"
-#   value    = "macOS"
-#
-#   depends_on = [elasticstack_kibana_install_prebuilt_rules.elastic]
-# }
-
-# ---------------------------------------------------------------------------
-# (Optional) Enable by data source — uncomment as needed
-# ---------------------------------------------------------------------------
-# resource "elasticstack_kibana_security_enable_rule" "enable_elastic_defend" {
-#   count    = var.install_prebuilt_rules ? 1 : 0
-#   space_id = var.kibana_space_id
-#   key      = "Data Source"
-#   value    = "Elastic Defend"
-#   depends_on = [elasticstack_kibana_install_prebuilt_rules.elastic]
-# }
-#
-# resource "elasticstack_kibana_security_enable_rule" "enable_aws" {
-#   count    = var.install_prebuilt_rules ? 1 : 0
-#   space_id = var.kibana_space_id
-#   key      = "Data Source"
-#   value    = "AWS"
+  depends_on = [elasticstack_kibana_install_prebuilt_rules.elastic]
+}
 #   depends_on = [elasticstack_kibana_install_prebuilt_rules.elastic]
 # }
