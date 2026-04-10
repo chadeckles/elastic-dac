@@ -7,11 +7,6 @@ output "prebuilt_rules_installed" {
   value       = var.install_prebuilt_rules ? elasticstack_kibana_install_prebuilt_rules.elastic[0].rules_installed : 0
 }
 
-output "prebuilt_rules_enabled_tags" {
-  description = "Prebuilt rule categories currently enabled (from var.enabled_prebuilt_rule_tags)."
-  value       = { for k, v in var.enabled_prebuilt_rule_tags : k => "${v.key}: ${v.value}" }
-}
-
 output "custom_rule_ids" {
   description = "Map of custom detection rule names → rule IDs."
   value       = module.custom_rules.rule_ids
