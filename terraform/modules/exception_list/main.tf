@@ -48,14 +48,13 @@ resource "elasticstack_kibana_security_exception_item" "this" {
   expire_time    = lookup(each.value, "expire_time", null)
   space_id       = var.space_id
 
-  dynamic "entries" {
-    for_each = each.value.entries
-    content {
-      field    = entries.value.field
-      type     = entries.value.type
-      operator = lookup(entries.value, "operator", "included")
-      value    = lookup(entries.value, "value", null)
-      values   = lookup(entries.value, "values", null)
-    }
-  }
+  # NOTE: entries is a nested attribute in the elasticstack provider (Terraform
+  # Framework), NOT a block type — so it must use attribute assignment.
+  entries = [for e in each.value.entries : {
+    field    = e.field
+    type     = e.type
+    operator = try(e.operator, "included")
+    value    = try(e.value, null)
+    values   = try(e.values, null)
+  }]
 }

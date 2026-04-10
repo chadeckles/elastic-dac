@@ -82,64 +82,35 @@ resource "elasticstack_kibana_security_detection_rule" "this" {
   timeline_title = var.timeline_title
 
   # ---- MITRE ATT&CK threat mapping ----------------------------------------
-  dynamic "threat" {
-    for_each = var.threat
-    content {
-      framework = "MITRE ATT&CK"
-
-      tactic {
-        id        = threat.value.tactic.id
-        name      = threat.value.tactic.name
-        reference = threat.value.tactic.reference
-      }
-
-      dynamic "technique" {
-        for_each = lookup(threat.value, "technique", [])
-        content {
-          id        = technique.value.id
-          name      = technique.value.name
-          reference = technique.value.reference
-
-          dynamic "subtechnique" {
-            for_each = lookup(technique.value, "subtechnique", [])
-            content {
-              id        = subtechnique.value.id
-              name      = subtechnique.value.name
-              reference = subtechnique.value.reference
-            }
-          }
-        }
-      }
+  # NOTE: threat, exceptions_list, threshold, alert_suppression are nested
+  # attributes in the elasticstack provider (Terraform Framework), NOT block
+  # types — so they must use attribute assignment, not dynamic blocks.
+  threat = [for t in var.threat : {
+    framework = "MITRE ATT&CK"
+    tactic = {
+      id        = t.tactic.id
+      name      = t.tactic.name
+      reference = t.tactic.reference
     }
-  }
+    technique = try(length(t.technique) > 0 ? [for tech in t.technique : {
+      id        = tech.id
+      name      = tech.name
+      reference = tech.reference
+      # Provider returns null (not []) when no subtechniques — match that
+      subtechnique = try(length(tech.subtechnique) > 0 ? [for sub in tech.subtechnique : {
+        id        = sub.id
+        name      = sub.name
+        reference = sub.reference
+      }] : null, null)
+    }] : null, null)
+  }]
 
   # ---- Exception list references -------------------------------------------
-  dynamic "exceptions_list" {
-    for_each = var.exceptions_list
-    content {
-      id             = exceptions_list.value.id
-      list_id        = exceptions_list.value.list_id
-      namespace_type = exceptions_list.value.namespace_type
-      type           = exceptions_list.value.type
-    }
-  }
+  exceptions_list = length(var.exceptions_list) > 0 ? var.exceptions_list : null
 
   # ---- Threshold -----------------------------------------------------------
-  dynamic "threshold" {
-    for_each = var.threshold != null ? [var.threshold] : []
-    content {
-      value = threshold.value.value
-      field = lookup(threshold.value, "field", null)
-    }
-  }
+  threshold = var.threshold
 
   # ---- Alert suppression ---------------------------------------------------
-  dynamic "alert_suppression" {
-    for_each = var.alert_suppression != null ? [var.alert_suppression] : []
-    content {
-      group_by                = alert_suppression.value.group_by
-      duration                = lookup(alert_suppression.value, "duration", null)
-      missing_fields_strategy = lookup(alert_suppression.value, "missing_fields_strategy", null)
-    }
-  }
+  alert_suppression = var.alert_suppression
 }

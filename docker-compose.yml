@@ -57,10 +57,10 @@ services:
     container_name: kb-detection-lab
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_USERNAME=elastic
       - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD:-changeme}
       - XPACK_SECURITY_ENABLED=true
-      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY:-a]V@tH3$mP9qLz!fR2xKw5yN8bC6dE1g}
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY:-aVtH3smP9qLzfR2xKw5yN8bC6dE1gJ4nQ7vX0u}
       - SERVER_HOST=0.0.0.0
       - TELEMETRY_ENABLED=false
     ports:

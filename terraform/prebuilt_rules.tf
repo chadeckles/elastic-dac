@@ -33,36 +33,39 @@ resource "elasticstack_kibana_install_prebuilt_rules" "elastic" {
 
 # Windows endpoint rules
 #   Covers: credential access, execution, lateral movement, persistence, etc.
-resource "elasticstack_kibana_security_enable_rule" "enable_windows" {
-  count    = var.install_prebuilt_rules ? 1 : 0
-  space_id = var.kibana_space_id
-  key      = "OS"
-  value    = "Windows"
-
-  depends_on = [elasticstack_kibana_install_prebuilt_rules.elastic]
-}
+#   NOTE: Bulk enable-by-tag can timeout in small Docker environments with
+#         1000+ prebuilt rules. Uncomment when running against a production
+#         cluster or enable rules manually in Kibana UI.
+# resource "elasticstack_kibana_security_enable_rule" "enable_windows" {
+#   count    = var.install_prebuilt_rules ? 1 : 0
+#   space_id = var.kibana_space_id
+#   key      = "OS"
+#   value    = "Windows"
+#
+#   depends_on = [elasticstack_kibana_install_prebuilt_rules.elastic]
+# }
 
 # Linux endpoint rules
 #   Covers: persistence, privilege escalation, defense evasion, etc.
-resource "elasticstack_kibana_security_enable_rule" "enable_linux" {
-  count    = var.install_prebuilt_rules ? 1 : 0
-  space_id = var.kibana_space_id
-  key      = "OS"
-  value    = "Linux"
-
-  depends_on = [elasticstack_kibana_install_prebuilt_rules.elastic]
-}
+# resource "elasticstack_kibana_security_enable_rule" "enable_linux" {
+#   count    = var.install_prebuilt_rules ? 1 : 0
+#   space_id = var.kibana_space_id
+#   key      = "OS"
+#   value    = "Linux"
+#
+#   depends_on = [elasticstack_kibana_install_prebuilt_rules.elastic]
+# }
 
 # macOS endpoint rules
 #   Covers: execution, persistence, collection, etc.
-resource "elasticstack_kibana_security_enable_rule" "enable_macos" {
-  count    = var.install_prebuilt_rules ? 1 : 0
-  space_id = var.kibana_space_id
-  key      = "OS"
-  value    = "macOS"
-
-  depends_on = [elasticstack_kibana_install_prebuilt_rules.elastic]
-}
+# resource "elasticstack_kibana_security_enable_rule" "enable_macos" {
+#   count    = var.install_prebuilt_rules ? 1 : 0
+#   space_id = var.kibana_space_id
+#   key      = "OS"
+#   value    = "macOS"
+#
+#   depends_on = [elasticstack_kibana_install_prebuilt_rules.elastic]
+# }
 
 # ---------------------------------------------------------------------------
 # (Optional) Enable by data source — uncomment as needed
