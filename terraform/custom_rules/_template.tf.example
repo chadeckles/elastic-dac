@@ -1,0 +1,113 @@
+# =============================================================================
+# TEMPLATE — Copy this file to create a new custom detection rule
+# =============================================================================
+#
+# Naming convention:  NNN_short_description.tf
+#   Find the highest-numbered file and increment:  ls *.tf | sort | tail -1
+#
+#   1. Copy:  cp _template.tf.example 006_my_new_rule.tf
+#   2. Rename the module block to a unique snake_case identifier
+#   3. Fill in the required fields (marked REQUIRED below)
+#   4. Add the module output to outputs.tf
+#   5. Run:  make test && make plan
+#
+# Module reference (all available variables):
+#   terraform/modules/detection_rule/variables.tf
+#
+# Elastic resource docs:
+#   https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_security_detection_rule
+# =============================================================================
+
+module "my_rule_name" {                  # ← RENAME: unique snake_case identifier
+  source = "../modules/detection_rule"
+
+  # ---- REQUIRED fields ----------------------------------------------------
+  name        = "My Rule Display Name"  # ← Human-readable rule name
+  description = "What this rule detects and why it matters."
+  type        = "query"                 # query | eql | esql | threshold | new_terms | threat_match | machine_learning
+  severity    = "medium"                # low | medium | high | critical
+  risk_score  = 50                      # 0–100
+
+  # Tags — MUST include a "Team: <name>" tag for SOC routing
+  tags = [
+    "my-category",
+    "Team: My Team",
+  ]
+
+  # MITRE ATT&CK mapping — at least one tactic required
+  threat = [
+    {
+      tactic = {
+        id        = "TA0001"
+        name      = "Initial Access"
+        reference = "https://attack.mitre.org/tactics/TA0001/"
+      }
+      technique = [
+        # {
+        #   id        = "T1190"
+        #   name      = "Exploit Public-Facing Application"
+        #   reference = "https://attack.mitre.org/techniques/T1190/"
+        #   subtechnique = []
+        # }
+      ]
+    }
+  ]
+
+  # ---- Query (required for query/eql/esql/threshold/new_terms/threat_match)
+  query    = "event.action:my_event"
+  language = "kuery"                    # kuery | lucene | eql | esql
+
+  # ---- Indices (recommended) -----------------------------------------------
+  index = [
+    "logs-*",
+  ]
+
+  # ---- Scheduling (optional — defaults shown) -------------------------------
+  # from     = "now-6m"
+  # to       = "now"
+  # interval = "5m"
+
+  # ---- False positives & references (optional) ------------------------------
+  false_positives = []
+  references      = []
+
+  # ---- Investigation notes (optional, Markdown) ------------------------------
+  # note = <<-EOT
+  #   ## Triage Steps
+  #   1. ...
+  # EOT
+
+  # ---- Setup guide (optional, Markdown) --------------------------------------
+  # setup = <<-EOT
+  #   ## Prerequisites
+  #   - ...
+  # EOT
+
+  # ---- Threshold (required for type = "threshold") ---------------------------
+  # threshold = {
+  #   field = ["source.ip"]
+  #   value = 10
+  # }
+
+  # ---- Exception list references (optional) ----------------------------------
+  # exceptions_list = [
+  #   {
+  #     id             = module.my_exception.id   # from exceptions/ module
+  #     list_id        = "my-exception-list"
+  #     namespace_type = "single"
+  #     type           = "detection"
+  #   }
+  # ]
+
+  # ---- Enabled toggle --------------------------------------------------------
+  # Inherits the directory default (var.default_enabled).  Override here to
+  # force this specific rule on or off regardless of the directory setting.
+  #
+  #   enabled = true          # Force-enable this rule
+  #   enabled = false         # Keep rule deployed but disabled
+  enabled = var.default_enabled
+
+  # ---- Shared variables (do not change) --------------------------------------
+  space_id     = var.space_id
+  default_tags = var.default_tags
+}

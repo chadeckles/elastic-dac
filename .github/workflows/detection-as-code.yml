@@ -1,0 +1,180 @@
+# =============================================================================
+# GitHub Actions — Detection as Code  (Terraform Plan + Apply)
+# =============================================================================
+# Workflow triggers:
+#   - On pull requests → terraform plan (comment on PR)
+#   - On push to main  → terraform apply -auto-approve
+#
+# Secrets required (configure in repo settings → Secrets):
+#   ELASTICSEARCH_USERNAME
+#   ELASTICSEARCH_PASSWORD
+#   ELASTICSEARCH_ENDPOINTS   (comma-separated, e.g. https://es.example.com:9243)
+#   KIBANA_USERNAME
+#   KIBANA_PASSWORD
+#   KIBANA_ENDPOINT           (e.g. https://kb.example.com:9243)
+# =============================================================================
+
+name: "Detection as Code — Terraform"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - ".github/workflows/detection-as-code.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - ".github/workflows/detection-as-code.yml"
+
+permissions:
+  contents: read
+  pull-requests: write        # Needed to comment plan output on PRs
+
+env:
+  TF_VERSION: "1.9.0"
+  TF_WORKING_DIR: "terraform"
+  # Provider env-var auth (overrides variables.tf defaults)
+  ELASTICSEARCH_USERNAME:  ${{ secrets.ELASTICSEARCH_USERNAME }}
+  ELASTICSEARCH_PASSWORD:  ${{ secrets.ELASTICSEARCH_PASSWORD }}
+  ELASTICSEARCH_ENDPOINTS: ${{ secrets.ELASTICSEARCH_ENDPOINTS }}
+  KIBANA_USERNAME:         ${{ secrets.KIBANA_USERNAME }}
+  KIBANA_PASSWORD:         ${{ secrets.KIBANA_PASSWORD }}
+  KIBANA_ENDPOINT:         ${{ secrets.KIBANA_ENDPOINT }}
+
+jobs:
+  # ==========================================================================
+  # Job 1 — Validate & Plan
+  # ==========================================================================
+  terraform-plan:
+    name: "Terraform Plan"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+    steps:
+      # ---- Checkout ---------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ---- Install Terraform ------------------------------------------------
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      # ---- Python + Unit Tests ------------------------------------------------
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run Rule Unit Tests
+        id: tests
+        run: |
+          pip install -q -r tests/requirements.txt
+          pytest --tb=short --no-header -q
+        working-directory: ${{ github.workspace }}
+
+      # ---- Terraform Format Check -------------------------------------------
+      - name: Terraform Format Check
+        id: fmt
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      # ---- Terraform Init ---------------------------------------------------
+      - name: Terraform Init
+        id: init
+        run: terraform init -input=false
+
+      # ---- Terraform Validate -----------------------------------------------
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+
+      # ---- Terraform Plan ---------------------------------------------------
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color -input=false -out=tfplan
+        continue-on-error: true
+
+      # ---- Post plan output to PR -------------------------------------------
+      - name: Comment Plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `### Terraform Detection-as-Code Plan 🔍
+
+            #### Unit Tests: \`${{ steps.tests.outcome }}\`
+            #### Format: \`${{ steps.fmt.outcome }}\`
+            #### Init:   \`${{ steps.init.outcome }}\`
+            #### Validate: \`${{ steps.validate.outcome }}\`
+            #### Plan:   \`${{ steps.plan.outcome }}\`
+
+            <details><summary>Show Plan Output</summary>
+
+            \`\`\`terraform
+            ${{ steps.plan.outputs.stdout }}
+            \`\`\`
+
+            </details>
+
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+      # ---- Fail if plan failed ----------------------------------------------
+      - name: Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+      # ---- Upload plan artifact for apply job --------------------------------
+      - name: Upload Plan Artifact
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.TF_WORKING_DIR }}/tfplan
+
+  # ==========================================================================
+  # Job 2 — Apply (main branch only)
+  # ==========================================================================
+  terraform-apply:
+    name: "Terraform Apply"
+    needs: terraform-plan
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production             # optional: use GH Environments for approval gates
+    defaults:
+      run:
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Download Plan Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.TF_WORKING_DIR }}
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -input=false tfplan

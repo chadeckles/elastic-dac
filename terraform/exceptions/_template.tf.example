@@ -1,0 +1,46 @@
+# =============================================================================
+# TEMPLATE — Copy this file to create a new exception list
+# =============================================================================
+#
+# Naming convention:  NNN_short_description.tf
+#   Find the highest-numbered file and increment:  ls *.tf | sort | tail -1
+#
+#   1. Copy:  cp _template.tf.example 005_my_exception_list.tf
+#   2. Rename the module block
+#   3. Fill in the list and item details
+#   4. Add the module output to outputs.tf
+#   5. Run:  make test && make plan
+#
+# Module reference:
+#   terraform/modules/exception_list/variables.tf
+# =============================================================================
+
+module "my_exception_list" {             # ← RENAME: unique snake_case identifier
+  source = "../modules/exception_list"
+
+  list_id     = "my-exception-list"      # ← Stable string ID
+  name        = "My Exception List"
+  description = "Describe what this exception list suppresses."
+  type        = "detection"              # detection | endpoint | ...
+  tags        = ["my-tag"]
+
+  items = [
+    {
+      item_id     = "my-first-item"
+      name        = "My First Exception"
+      description = "Why this exception exists."
+      tags        = ["reason"]
+      entries = [
+        {
+          field    = "host.name"
+          type     = "match"
+          operator = "included"
+          value    = "trusted-host"
+        }
+      ]
+    },
+    # Add more items as needed...
+  ]
+
+  space_id = var.space_id
+}

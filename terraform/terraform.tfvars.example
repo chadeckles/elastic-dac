@@ -1,0 +1,21 @@
+# =============================================================================
+# Example tfvars — copy to terraform.tfvars and customise
+# =============================================================================
+
+elasticsearch_username  = "elastic"
+elasticsearch_password  = "changeme"
+elasticsearch_endpoints = ["http://localhost:9200"]
+
+kibana_username = "elastic"
+kibana_password = "changeme"
+kibana_endpoint = "http://localhost:5601"
+
+kibana_space_id = "default"
+environment     = "dev"
+
+install_prebuilt_rules = true
+
+default_rule_tags = [
+  "detection-as-code",
+  "terraform-managed",
+]
