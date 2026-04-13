@@ -35,13 +35,6 @@ permissions:
 env:
   TF_VERSION: "1.9.0"
   TF_WORKING_DIR: "terraform"
-  # Provider env-var auth (overrides variables.tf defaults)
-  ELASTICSEARCH_USERNAME:  ${{ secrets.ELASTICSEARCH_USERNAME }}
-  ELASTICSEARCH_PASSWORD:  ${{ secrets.ELASTICSEARCH_PASSWORD }}
-  ELASTICSEARCH_ENDPOINTS: ${{ secrets.ELASTICSEARCH_ENDPOINTS }}
-  KIBANA_USERNAME:         ${{ secrets.KIBANA_USERNAME }}
-  KIBANA_PASSWORD:         ${{ secrets.KIBANA_PASSWORD }}
-  KIBANA_ENDPOINT:         ${{ secrets.KIBANA_ENDPOINT }}
 
 jobs:
   # ==========================================================================
@@ -58,6 +51,39 @@ jobs:
       # ---- Checkout ---------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # ---- Credentials: set from secrets when available ---------------------
+      # When secrets are not configured the env vars stay unset and the
+      # elasticstack provider falls back to the defaults in variables.tf
+      # (localhost endpoints) — satisfied by the Docker Compose step below.
+      - name: Configure credentials from secrets
+        id: creds
+        env:
+          _KIBANA_ENDPOINT: ${{ secrets.KIBANA_ENDPOINT }}
+          _KIBANA_USERNAME: ${{ secrets.KIBANA_USERNAME }}
+          _KIBANA_PASSWORD: ${{ secrets.KIBANA_PASSWORD }}
+          _ES_ENDPOINTS: ${{ secrets.ELASTICSEARCH_ENDPOINTS }}
+          _ES_USERNAME: ${{ secrets.ELASTICSEARCH_USERNAME }}
+          _ES_PASSWORD: ${{ secrets.ELASTICSEARCH_PASSWORD }}
+        run: |
+          if [ -n "$_KIBANA_ENDPOINT" ]; then
+            echo "KIBANA_ENDPOINT=$_KIBANA_ENDPOINT"     >> $GITHUB_ENV
+            echo "KIBANA_USERNAME=$_KIBANA_USERNAME"     >> $GITHUB_ENV
+            echo "KIBANA_PASSWORD=$_KIBANA_PASSWORD"     >> $GITHUB_ENV
+            echo "ELASTICSEARCH_ENDPOINTS=$_ES_ENDPOINTS" >> $GITHUB_ENV
+            echo "ELASTICSEARCH_USERNAME=$_ES_USERNAME"  >> $GITHUB_ENV
+            echo "ELASTICSEARCH_PASSWORD=$_ES_PASSWORD"  >> $GITHUB_ENV
+            echo "have_credentials=true" >> $GITHUB_OUTPUT
+          else
+            echo "have_credentials=false" >> $GITHUB_OUTPUT
+          fi
+
+      # ---- Local Elastic Stack (when no external credentials provided) ------
+      - name: Start local Elastic Stack
+        if: steps.creds.outputs.have_credentials == 'false'
+        run: docker compose up -d --wait
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 10
 
       # ---- Install Terraform ------------------------------------------------
       - name: Setup Terraform
@@ -161,6 +187,36 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # ---- Credentials: set from secrets when available ---------------------
+      - name: Configure credentials from secrets
+        id: creds
+        env:
+          _KIBANA_ENDPOINT: ${{ secrets.KIBANA_ENDPOINT }}
+          _KIBANA_USERNAME: ${{ secrets.KIBANA_USERNAME }}
+          _KIBANA_PASSWORD: ${{ secrets.KIBANA_PASSWORD }}
+          _ES_ENDPOINTS: ${{ secrets.ELASTICSEARCH_ENDPOINTS }}
+          _ES_USERNAME: ${{ secrets.ELASTICSEARCH_USERNAME }}
+          _ES_PASSWORD: ${{ secrets.ELASTICSEARCH_PASSWORD }}
+        run: |
+          if [ -n "$_KIBANA_ENDPOINT" ]; then
+            echo "KIBANA_ENDPOINT=$_KIBANA_ENDPOINT"     >> $GITHUB_ENV
+            echo "KIBANA_USERNAME=$_KIBANA_USERNAME"     >> $GITHUB_ENV
+            echo "KIBANA_PASSWORD=$_KIBANA_PASSWORD"     >> $GITHUB_ENV
+            echo "ELASTICSEARCH_ENDPOINTS=$_ES_ENDPOINTS" >> $GITHUB_ENV
+            echo "ELASTICSEARCH_USERNAME=$_ES_USERNAME"  >> $GITHUB_ENV
+            echo "ELASTICSEARCH_PASSWORD=$_ES_PASSWORD"  >> $GITHUB_ENV
+            echo "have_credentials=true" >> $GITHUB_OUTPUT
+          else
+            echo "have_credentials=false" >> $GITHUB_OUTPUT
+          fi
+
+      # ---- Local Elastic Stack (when no external credentials provided) ------
+      - name: Start local Elastic Stack
+        if: steps.creds.outputs.have_credentials == 'false'
+        run: docker compose up -d --wait
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 10
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
