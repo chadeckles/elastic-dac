@@ -95,6 +95,17 @@ new-exception: ## 🧙 Interactive wizard to create a new exception list
 	@chmod +x $(SCRIPTS_DIR)/new_exception.sh
 	@$(SCRIPTS_DIR)/new_exception.sh
 
+# ---------------------------------------------------------------------------
+# Import from Kibana GUI
+# ---------------------------------------------------------------------------
+.PHONY: list-rules
+list-rules: ## 📋 List all detection rules currently in Kibana
+	@python3 $(SCRIPTS_DIR)/import_gui_rule.py --list
+
+.PHONY: import-rule
+import-rule: ## 📥 Import a GUI-created rule into Terraform (by name)
+	@python3 $(SCRIPTS_DIR)/import_gui_rule.py --name "$(NAME)"
+
 .PHONY: cheatsheet
 cheatsheet: ## 📋 Print a quick-reference cheatsheet to the terminal
 	@echo ""
@@ -106,6 +117,10 @@ cheatsheet: ## 📋 Print a quick-reference cheatsheet to the terminal
 	@echo "  │  CREATE                                                    │"
 	@echo "  │    make new-rule         Create a new detection rule       │"
 	@echo "  │    make new-exception    Create a new exception list       │"
+	@echo "  ├─────────────────────────────────────────────────────────────┤"
+	@echo "  │  IMPORT FROM KIBANA                                        │"
+	@echo "  │    make list-rules       List all rules in Kibana          │"
+	@echo "  │    make import-rule      Import a single GUI rule into TF  │"
 	@echo "  ├─────────────────────────────────────────────────────────────┤"
 	@echo "  │  TEST & DEPLOY                                             │"
 	@echo "  │    make test             Validate all rules (run first!)   │"
@@ -185,6 +200,14 @@ dac-setup: ## Initialise custom rules directory for detection-rules CLI
 # ---------------------------------------------------------------------------
 .PHONY: ci
 ci: fmt validate test plan ## Run full CI pipeline locally: fmt → validate → test → plan
+
+# ---------------------------------------------------------------------------
+# Demo
+# ---------------------------------------------------------------------------
+.PHONY: demo-reset
+demo-reset: ## 🔄 Reset environment between demo runs (reverts files, redeploys baseline)
+	@chmod +x $(SCRIPTS_DIR)/demo_cleanup.sh
+	@$(SCRIPTS_DIR)/demo_cleanup.sh
 
 # ---------------------------------------------------------------------------
 # Help
