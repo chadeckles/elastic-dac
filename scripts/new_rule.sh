@@ -214,7 +214,7 @@ IFS=',' read -ra INDEX_ARRAY <<< "$INDEX_CSV"
 
 # ---- Team & tags -----------------------------------------------------------
 echo ""
-prompt_required TEAM_NAME "Team name for SOC routing (e.g. SOC, Threat Intel, Infrastructure)"
+prompt_required TEAM_NAME "Team name for routing (e.g. CSSP, Threat Intel, Infrastructure)"
 prompt TAG_CSV "Additional tags (comma-separated, optional)" ""
 
 # ---- MITRE ATT&CK ---------------------------------------------------------

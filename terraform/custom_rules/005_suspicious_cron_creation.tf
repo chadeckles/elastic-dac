@@ -5,7 +5,7 @@
 # attacker establishing persistence.
 #
 # MITRE ATT&CK:  TA0003 Persistence → T1053.003 Cron
-# Team:          Infrastructure
+# Team:          CSSP
 # =============================================================================
 
 module "suspicious_cron_creation" {
@@ -30,7 +30,7 @@ module "suspicious_cron_creation" {
     "linux",
     "persistence",
     "cron",
-    "Team: Infrastructure",
+    "Team: CSSP",
   ]
 
   false_positives = [
@@ -41,28 +41,8 @@ module "suspicious_cron_creation" {
     "https://attack.mitre.org/techniques/T1053/003/",
   ]
 
-  threat = [
-    {
-      tactic = {
-        id        = "TA0003"
-        name      = "Persistence"
-        reference = "https://attack.mitre.org/tactics/TA0003/"
-      }
-      technique = [
-        {
-          id        = "T1053"
-          name      = "Scheduled Task/Job"
-          reference = "https://attack.mitre.org/techniques/T1053/"
-          subtechnique = [
-            {
-              id        = "T1053.003"
-              name      = "Cron"
-              reference = "https://attack.mitre.org/techniques/T1053/003/"
-            }
-          ]
-        }
-      ]
-    }
+  mitre_attack = [
+    { tactic = "TA0003", techniques = ["T1053"], subtechniques = ["T1053.003"] },
   ]
 
   # ---- Toggle (inherit directory default or override per-rule) --------

@@ -90,7 +90,7 @@ def all_exception_lists() -> dict:
 class TestRequiredFields:
     """Every custom rule module must pass the required variables."""
 
-    REQUIRED_FIELDS = {"name", "description", "type", "severity", "risk_score", "tags", "threat"}
+    REQUIRED_FIELDS = {"name", "description", "type", "severity", "risk_score", "tags"}
 
     def test_rules_have_required_fields(self, all_rules: dict):
         assert len(all_rules) > 0, "No custom rule .tf files found in custom_rules/"
@@ -98,6 +98,11 @@ class TestRequiredFields:
             missing = self.REQUIRED_FIELDS - set(rule.keys())
             assert not missing, (
                 f"Rule '{key}' is missing required fields: {missing}"
+            )
+            # Must have either threat or mitre_attack
+            has_mitre = "threat" in rule or "mitre_attack" in rule
+            assert has_mitre, (
+                f"Rule '{key}' is missing MITRE mapping: provide 'threat' or 'mitre_attack'."
             )
 
 
@@ -119,7 +124,7 @@ class TestTeamTag:
             has_team = any(self.TEAM_TAG_PATTERN.match(t) for t in tags)
             assert has_team, (
                 f"Rule '{key}' does not have a 'Team: <team_name>' tag. "
-                "All custom rules must include a team tag for SOC routing."
+                "All custom rules must include a team tag for routing."
             )
 
 
@@ -132,19 +137,27 @@ class TestMitreMapping:
     def test_rules_have_threat_mapping(self, all_rules: dict):
         for key, rule in all_rules.items():
             threat = rule.get("threat", [])
-            assert len(threat) > 0, (
+            mitre_attack = rule.get("mitre_attack", [])
+            has_mapping = len(threat) > 0 or len(mitre_attack) > 0
+            assert has_mapping, (
                 f"Rule '{key}' has no MITRE ATT&CK threat mapping."
             )
 
     def test_threat_has_valid_tactic(self, all_rules: dict):
         for key, rule in all_rules.items():
+            # Check verbose threat format
             for i, t in enumerate(rule.get("threat", [])):
                 tactic = t.get("tactic", {})
                 assert "id" in tactic, (
                     f"Rule '{key}' threat[{i}].tactic missing 'id'."
                 )
-                assert tactic["id"].startswith("TA"), (
-                    f"Rule '{key}' threat[{i}].tactic.id '{tactic['id']}' "
+            # Check simplified mitre_attack format
+            for i, entry in enumerate(rule.get("mitre_attack", [])):
+                assert "tactic" in entry, (
+                    f"Rule '{key}' mitre_attack[{i}] missing 'tactic' ID."
+                )
+                assert entry["tactic"].startswith("TA"), (
+                    f"Rule '{key}' mitre_attack[{i}].tactic '{entry['tactic']}' "
                     "does not look like a valid MITRE tactic ID."
                 )
 

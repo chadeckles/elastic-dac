@@ -5,7 +5,7 @@
 # creation within 1 minute on the same host.
 #
 # MITRE ATT&CK:  TA0008 Lateral Movement → T1021 Remote Services
-# Team:          Threat Intel
+# Team:          CSSP
 # =============================================================================
 
 module "lateral_movement_remote_services" {
@@ -36,7 +36,7 @@ module "lateral_movement_remote_services" {
     "windows",
     "lateral-movement",
     "persistence",
-    "Team: Threat Intel",
+    "Team: CSSP",
   ]
 
   false_positives = [
@@ -48,22 +48,8 @@ module "lateral_movement_remote_services" {
     "https://attack.mitre.org/techniques/T1543/003/",
   ]
 
-  threat = [
-    {
-      tactic = {
-        id        = "TA0008"
-        name      = "Lateral Movement"
-        reference = "https://attack.mitre.org/tactics/TA0008/"
-      }
-      technique = [
-        {
-          id           = "T1021"
-          name         = "Remote Services"
-          reference    = "https://attack.mitre.org/techniques/T1021/"
-          subtechnique = []
-        }
-      ]
-    }
+  mitre_attack = [
+    { tactic = "TA0008", techniques = ["T1021"], subtechniques = [] },
   ]
 
   # ---- Toggle (inherit directory default or override per-rule) --------

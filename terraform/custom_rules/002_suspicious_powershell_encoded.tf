@@ -6,7 +6,7 @@
 #
 # MITRE ATT&CK:  TA0002 Execution → T1059.001 PowerShell
 #                TA0005 Defense Evasion → T1027 Obfuscated Files
-# Team:          Threat Intel
+# Team:          CSSP
 # =============================================================================
 
 module "suspicious_powershell_encoded" {
@@ -32,7 +32,7 @@ module "suspicious_powershell_encoded" {
     "powershell",
     "execution",
     "defense-evasion",
-    "Team: Threat Intel",
+    "Team: CSSP",
   ]
 
   false_positives = [
@@ -53,43 +53,9 @@ module "suspicious_powershell_encoded" {
     4. Review file-system artefacts created by the process.
   EOT
 
-  threat = [
-    {
-      tactic = {
-        id        = "TA0002"
-        name      = "Execution"
-        reference = "https://attack.mitre.org/tactics/TA0002/"
-      }
-      technique = [
-        {
-          id        = "T1059"
-          name      = "Command and Scripting Interpreter"
-          reference = "https://attack.mitre.org/techniques/T1059/"
-          subtechnique = [
-            {
-              id        = "T1059.001"
-              name      = "PowerShell"
-              reference = "https://attack.mitre.org/techniques/T1059/001/"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      tactic = {
-        id        = "TA0005"
-        name      = "Defense Evasion"
-        reference = "https://attack.mitre.org/tactics/TA0005/"
-      }
-      technique = [
-        {
-          id        = "T1027"
-          name      = "Obfuscated Files or Information"
-          reference = "https://attack.mitre.org/techniques/T1027/"
-          subtechnique = []
-        }
-      ]
-    }
+  mitre_attack = [
+    { tactic = "TA0002", techniques = ["T1059"], subtechniques = ["T1059.001"] },
+    { tactic = "TA0005", techniques = ["T1027"], subtechniques = [] },
   ]
 
   # ---- Toggle (inherit directory default or override per-rule) --------

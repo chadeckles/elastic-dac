@@ -54,8 +54,27 @@ variable "tags" {
 }
 
 variable "threat" {
-  description = "MITRE ATT&CK threat mapping (at least one tactic required)."
+  description = "MITRE ATT&CK threat mapping (full verbose format). Use mitre_attack instead for the simplified ID-only format."
   type        = list(any)
+  default     = null
+}
+
+variable "mitre_attack" {
+  description = <<-EOT
+    Simplified MITRE ATT&CK mapping — just provide IDs, the module resolves
+    names and references automatically.
+
+    Example:
+      mitre_attack = [
+        { tactic = "TA0006", techniques = ["T1110"], subtechniques = ["T1110.001"] },
+      ]
+  EOT
+  type = list(object({
+    tactic        = string
+    techniques    = optional(list(string), [])
+    subtechniques = optional(list(string), [])
+  }))
+  default = null
 }
 
 # ---------------------------------------------------------------------------

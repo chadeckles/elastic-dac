@@ -4,7 +4,7 @@
 # Detects >10 failed login attempts from a single source within 5 minutes.
 #
 # MITRE ATT&CK:  TA0006 Credential Access → T1110 Brute Force
-# Team:          SOC
+# Team:          CSSP
 # =============================================================================
 
 module "brute_force_login" {
@@ -31,7 +31,7 @@ module "brute_force_login" {
     "brute-force",
     "authentication",
     "credential-access",
-    "Team: SOC",
+    "Team: CSSP",
   ]
 
   false_positives = [
@@ -62,28 +62,8 @@ module "brute_force_login" {
     value = 10
   }
 
-  threat = [
-    {
-      tactic = {
-        id        = "TA0006"
-        name      = "Credential Access"
-        reference = "https://attack.mitre.org/tactics/TA0006/"
-      }
-      technique = [
-        {
-          id        = "T1110"
-          name      = "Brute Force"
-          reference = "https://attack.mitre.org/techniques/T1110/"
-          subtechnique = [
-            {
-              id        = "T1110.001"
-              name      = "Password Guessing"
-              reference = "https://attack.mitre.org/techniques/T1110/001/"
-            }
-          ]
-        }
-      ]
-    }
+  mitre_attack = [
+    { tactic = "TA0006", techniques = ["T1110"], subtechniques = ["T1110.001"] },
   ]
 
   # ---- Toggle (inherit directory default or override per-rule) --------

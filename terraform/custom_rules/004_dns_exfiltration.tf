@@ -5,7 +5,7 @@
 # DNS tunneling.
 #
 # MITRE ATT&CK:  TA0010 Exfiltration → T1048 Alt Protocol
-# Team:          SOC
+# Team:          CSSP
 # =============================================================================
 
 module "dns_exfiltration" {
@@ -30,7 +30,7 @@ module "dns_exfiltration" {
     "dns",
     "exfiltration",
     "network",
-    "Team: SOC",
+    "Team: CSSP",
   ]
 
   false_positives = [
@@ -43,28 +43,8 @@ module "dns_exfiltration" {
     "https://attack.mitre.org/techniques/T1071/004/",
   ]
 
-  threat = [
-    {
-      tactic = {
-        id        = "TA0010"
-        name      = "Exfiltration"
-        reference = "https://attack.mitre.org/tactics/TA0010/"
-      }
-      technique = [
-        {
-          id        = "T1048"
-          name      = "Exfiltration Over Alternative Protocol"
-          reference = "https://attack.mitre.org/techniques/T1048/"
-          subtechnique = [
-            {
-              id        = "T1048.001"
-              name      = "Exfiltration Over Symmetric Encrypted Non-C2 Protocol"
-              reference = "https://attack.mitre.org/techniques/T1048/001/"
-            }
-          ]
-        }
-      ]
-    }
+  mitre_attack = [
+    { tactic = "TA0010", techniques = ["T1048"], subtechniques = ["T1048.001"] },
   ]
 
   # ---- Toggle (inherit directory default or override per-rule) --------

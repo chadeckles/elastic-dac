@@ -117,7 +117,7 @@ Walk through the prompts:
 - **Language:** `kuery`
 - **Query:** `process.name:"schtasks.exe" AND process.args:("/create" OR "/Create")`
 - **Index patterns:** `winlogbeat-*,logs-endpoint.events.*`
-- **Team:** `SOC`
+- **Team:** `CSSP`
 - **MITRE Tactic:** `TA0003` (Persistence)
 - **Technique:** `T1053` (Scheduled Task/Job)
 - **Sub-technique:** `T1053.005` (Scheduled Task)
@@ -184,7 +184,7 @@ version-controlled. If this was a real workflow, this would go through a PR."
    - **Severity:** `Medium`
    - **Risk score:** `40`
    - **MITRE:** Initial Access → Valid Accounts (T1078)
-   - **Tags:** `Team: SOC`, `identity`, `account-takeover`
+   - **Tags:** `Team: CSSP`, `identity`, `account-takeover`
 4. Click **Create & enable rule**
 5. Confirm it appears in the rules list
 
@@ -455,7 +455,7 @@ Walk through:
 Navigate to **Security → Rules** → filter by **Elastic rules** tag.
 
 "These are Elastic's vendor-maintained rules. Terraform installed them and
-keeps them updated. The SOC team enables the ones relevant to their
+keeps them updated. The CSSP team enables the ones relevant to their
 environment directly in Kibana."
 
 **Talking point:** "We don't manage 1,400+ prebuilt rules in `.tf` files.

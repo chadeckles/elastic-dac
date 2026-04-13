@@ -28,29 +28,16 @@ module "my_rule_name" {                  # ← RENAME: unique snake_case identif
   severity    = "medium"                # low | medium | high | critical
   risk_score  = 50                      # 0–100
 
-  # Tags — MUST include a "Team: <name>" tag for SOC routing
+  # Tags — MUST include a "Team: <name>" tag for routing
   tags = [
     "my-category",
-    "Team: My Team",
+    "Team: CSSP",
   ]
 
-  # MITRE ATT&CK mapping — at least one tactic required
-  threat = [
-    {
-      tactic = {
-        id        = "TA0001"
-        name      = "Initial Access"
-        reference = "https://attack.mitre.org/tactics/TA0001/"
-      }
-      technique = [
-        # {
-        #   id        = "T1190"
-        #   name      = "Exploit Public-Facing Application"
-        #   reference = "https://attack.mitre.org/techniques/T1190/"
-        #   subtechnique = []
-        # }
-      ]
-    }
+  # MITRE ATT&CK mapping — just provide IDs, module resolves names/URLs
+  #   See: terraform/modules/detection_rule/mitre_lookup.tf for all IDs
+  mitre_attack = [
+    { tactic = "TA0001", techniques = ["T1190"], subtechniques = [] },
   ]
 
   # ---- Query (required for query/eql/esql/threshold/new_terms/threat_match)

@@ -82,10 +82,33 @@ resource "elasticstack_kibana_security_detection_rule" "this" {
   timeline_title = var.timeline_title
 
   # ---- MITRE ATT&CK threat mapping ----------------------------------------
-  # NOTE: threat, exceptions_list, threshold, alert_suppression are nested
-  # attributes in the elasticstack provider (Terraform Framework), NOT block
-  # types — so they must use attribute assignment, not dynamic blocks.
-  threat = [for t in var.threat : {
+  # Supports two input modes:
+  #   1. mitre_attack = [{tactic = "TA0006", techniques = ["T1110"], ...}]
+  #      → IDs only, module resolves names/URLs from mitre_lookup.tf
+  #   2. threat = [{tactic = {id = ..., name = ..., reference = ...}, ...}]
+  #      → Full verbose format (legacy / imported rules)
+  #
+  # If mitre_attack is provided, it takes precedence over threat.
+  threat = local.resolved_threat != null ? [
+    for t in local.resolved_threat : {
+      framework = "MITRE ATT&CK"
+      tactic = {
+        id        = t.tactic.id
+        name      = t.tactic.name
+        reference = t.tactic.reference
+      }
+      technique = try(length(t.technique) > 0 ? [for tech in t.technique : {
+        id        = tech.id
+        name      = tech.name
+        reference = tech.reference
+        subtechnique = try(length(tech.subtechnique) > 0 ? [for sub in tech.subtechnique : {
+          id        = sub.id
+          name      = sub.name
+          reference = sub.reference
+        }] : null, null)
+      }] : null, null)
+    }
+  ] : var.threat != null ? [for t in var.threat : {
     framework = "MITRE ATT&CK"
     tactic = {
       id        = t.tactic.id
@@ -96,14 +119,13 @@ resource "elasticstack_kibana_security_detection_rule" "this" {
       id        = tech.id
       name      = tech.name
       reference = tech.reference
-      # Provider returns null (not []) when no subtechniques — match that
       subtechnique = try(length(tech.subtechnique) > 0 ? [for sub in tech.subtechnique : {
         id        = sub.id
         name      = sub.name
         reference = sub.reference
       }] : null, null)
     }] : null, null)
-  }]
+  }] : []
 
   # ---- Exception list references -------------------------------------------
   exceptions_list = length(var.exceptions_list) > 0 ? var.exceptions_list : null
