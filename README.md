@@ -17,6 +17,7 @@
 - [Terraform Modules](#terraform-modules)
 - [Adding a New Rule](#adding-a-new-rule)
 - [Adding an Exception](#adding-an-exception)
+- [Importing a GUI-Created Rule](#importing-a-gui-created-rule)
 - [Unit Testing](#unit-testing)
 - [CI/CD Pipeline](#cicd-pipeline)
 - [Upstream Rule Sync](#upstream-rule-sync)
@@ -44,6 +45,8 @@ management.
 | **Pytest Suite** | Unit tests enforcing Team tags, MITRE mapping, field validation |
 | **GitHub Actions** | CI/CD with `terraform plan` on PRs and `terraform apply` on merge |
 | **Interactive Wizards** | `make new-rule` and `make new-exception` for non-coder detection engineers |
+| **GUI Rule Import** | `make import-rule` brings Kibana-created rules into Git/Terraform |
+| **MITRE ATT&CK Lookup** | ID-only MITRE mapping — module auto-resolves names and URLs |
 | **Upstream Sync** | Weekly automated sync from Elastic's detection-rules repo |
 
 ### Key DaC Principles
@@ -55,7 +58,7 @@ Per [Elastic's DaC guide](https://www.elastic.co/security-labs/detection-as-code
 - **Automated testing** — Pytest validates rule structure, tags, MITRE mapping
 - **Automated deployment** — `terraform apply` on merge to `main`
 - **Consistency** — Modules enforce standards across all rules
-- **Team routing** — `Team: <name>` tags on every rule for SOC triage routing
+- **Team routing** — `Team: <name>` tags on every rule for triage routing
 
 ### What Terraform Manages (and What It Doesn't)
 
@@ -118,7 +121,7 @@ in `.tf` files.
 ## Project Structure
 
 ```
-elastic/
+elastic-dac/
 ├── .github/workflows/          # CI/CD pipelines
 ├── terraform/
 │   ├── main.tf                 # Provider config + child module calls
@@ -127,13 +130,17 @@ elastic/
 │   ├── prebuilt_rules.tf       # Elastic prebuilt rule management
 │   ├── modules/
 │   │   ├── detection_rule/     # Reusable module: one detection rule
+│   │   │   └── mitre_lookup.tf # MITRE ATT&CK ID → name/URL lookup maps
 │   │   └── exception_list/     # Reusable module: one exception list + items
 │   ├── custom_rules/           # One numbered .tf file per detection rule
 │   └── exceptions/             # One numbered .tf file per exception list
 ├── tests/                      # Pytest unit tests
-├── scripts/                    # Setup, teardown, sync, wizards
+├── scripts/                    # Setup, teardown, sync, wizards, import
+│   ├── import_gui_rule.py      # Import a Kibana GUI rule into Terraform
+│   └── demo_cleanup.sh         # Reset environment between demo runs
 ├── docker-compose.yml          # Local dev stack (optional)
 ├── Makefile                    # Shortcut targets
+├── DEMO_RUNBOOK.md             # Step-by-step demo walkthrough
 └── README.md
 ```
 
@@ -275,7 +282,8 @@ Creates **one** detection rule per module call from individual `.tf` files in
 | `severity` | `string` | low / medium / high / critical |
 | `risk_score` | `number` | 0–100 |
 | `tags` | `list(string)` | Must include a `Team:` tag |
-| `threat` | `list(object)` | MITRE ATT&CK mapping |
+| `threat` | `list(object)` | MITRE ATT&CK mapping (verbose format) |
+| `mitre_attack` | `list(object)` | **Simplified** MITRE mapping — just IDs, module resolves names/URLs |
 | `enabled` | `bool` | Enable the rule on deploy (default: `true`) |
 | `threshold` | `object` | Threshold config (for threshold rules) |
 | `alert_suppression` | `object` | Alert suppression config |
@@ -350,17 +358,13 @@ See `modules/exception_list/variables.tf` for the full interface including
      language    = "kuery"
      severity    = "medium"
      risk_score  = 50
-     tags        = ["my-tag", "Team: My Team"]  # Team tag required!
+     tags        = ["my-tag", "Team: CSSP"]  # Team tag required!
      space_id    = var.space_id
 
-     threat = [{
-       tactic = {
-         id        = "TA0001"
-         name      = "Initial Access"
-         reference = "https://attack.mitre.org/tactics/TA0001/"
-       }
-       technique = []
-     }]
+     # Simplified MITRE mapping — just IDs, module resolves names/URLs
+     mitre_attack = [
+       { tactic = "TA0001", techniques = ["T1190"], subtechniques = [] },
+     ]
    }
    ```
 
@@ -433,6 +437,35 @@ See `modules/exception_list/variables.tf` for the full interface including
 
 ---
 
+## Importing a GUI-Created Rule
+
+Detection engineers who prototype rules in the Kibana GUI can bring them into
+Terraform/Git with a single command:
+
+```bash
+# List all rules in Kibana
+make list-rules
+
+# Import by name (partial match)
+make import-rule NAME="Password Change"
+```
+
+The script generates a `.tf` file in `custom_rules/` with both the `rule_id`
+and the internal Kibana `id` in the header (you need the latter for
+`terraform import`). Follow the printed next-steps:
+
+1. Review and edit the generated file
+2. Add to `outputs.tf`
+3. `cd terraform && terraform init`
+4. `terraform import` using the **internal Kibana `id`** (not the `rule_id`)
+5. `terraform plan` to verify
+
+> ⚠️ **Kibana has two different UUIDs per rule.** The `rule_id` is the API
+> identifier used in queries. The `id` (internal document ID) is what the
+> Terraform provider uses. The import script prints both.
+
+---
+
 ## Unit Testing
 
 The pytest suite in `tests/test_rules.py` validates rule and exception
@@ -446,7 +479,7 @@ PR stage.
 |---|---|
 | Required fields | Every rule has name, description, type, severity, risk_score |
 | Team tag | Every rule has a `Team: <name>` tag |
-| MITRE mapping | Every rule maps to ≥1 ATT&CK tactic with valid ID format |
+| MITRE mapping | Every rule maps to ≥1 ATT&CK tactic (via `threat` or `mitre_attack`) |
 | Risk score range | 0–100 |
 | Severity values | low / medium / high / critical |
 | Rule types | Supported Elastic type |
@@ -543,6 +576,9 @@ massive changelog. Subsequent runs only report changes since that baseline.
 | `make fmt` | Format Terraform files |
 | `make new-rule` | 🧙 Interactive wizard — create a new detection rule |
 | `make new-exception` | 🧙 Interactive wizard — create a new exception list |
+| `make list-rules` | List all detection rules in Kibana |
+| `make import-rule` | Import a GUI-created rule into Terraform |
+| `make demo-reset` | Reset environment between demo practice runs |
 | `make cheatsheet` | 📋 Print quick-reference card to terminal |
 | `make sync-upstream` | Sync from elastic/detection-rules |
 | `make sync-upstream-dry` | Dry-run sync (no tracking update) |
@@ -568,6 +604,8 @@ make apply            # Deploy
 
 ## References
 
+- [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md) — Step-by-step demo walkthrough for screen recordings
+- [MITRE ATT&CK Lookup](terraform/modules/detection_rule/mitre_lookup.tf) — All supported tactic/technique/subtechnique IDs
 - [Elastic's DaC Engineer Guide](https://www.elastic.co/security-labs/detection-as-code-timeline-and-new-features) — Primary methodology guide
 - [DaC Reference Documentation](https://dac-reference.readthedocs.io/en/latest/) — Extended implementation guidance
 - [elastic/detection-rules](https://github.com/elastic/detection-rules) — Elastic's open-source rule repo and CLI

@@ -168,7 +168,6 @@ jobs:
     needs: terraform-plan
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    environment: production             # optional: use GH Environments for approval gates
     defaults:
       run:
         working-directory: ${{ env.TF_WORKING_DIR }}
