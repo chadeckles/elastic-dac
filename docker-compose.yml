@@ -50,6 +50,22 @@ services:
       start_period: 60s
 
   # ---------------------------------------------------------------------------
+  # Set kibana_system password (init container — runs once then exits)
+  # ---------------------------------------------------------------------------
+  set-kibana-password:
+    image: curlimages/curl:latest
+    container_name: set-kibana-password
+    networks:
+      - elastic-net
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD:-changeme}
+    command: ["sh", "-c", "curl -s -X POST http://elasticsearch:9200/_security/user/kibana_system/_password -u elastic:$$ELASTIC_PASSWORD -H 'Content-Type: application/json' -d '{\"password\": \"'$$ELASTIC_PASSWORD'\"}'"]
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
   # Kibana
   # ---------------------------------------------------------------------------
   kibana:
@@ -57,7 +73,7 @@ services:
     container_name: kb-detection-lab
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      - ELASTICSEARCH_USERNAME=elastic
+      - ELASTICSEARCH_USERNAME=kibana_system
       - ELASTICSEARCH_PASSWORD=${ELASTIC_PASSWORD:-changeme}
       - XPACK_SECURITY_ENABLED=true
       - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY:-aVtH3smP9qLzfR2xKw5yN8bC6dE1gJ4nQ7vX0u}
@@ -70,6 +86,8 @@ services:
     depends_on:
       elasticsearch:
         condition: service_healthy
+      set-kibana-password:
+        condition: service_completed_successfully
     healthcheck:
       test:
         [

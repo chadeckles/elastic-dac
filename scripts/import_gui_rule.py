@@ -113,6 +113,7 @@ def rule_to_tf(rule: dict, idx: int) -> tuple[str, str, str]:
     lang = rule.get("language", "kuery")
     enabled = str(rule.get("enabled", False)).lower()
     rid = rule.get("rule_id", "")
+    kibana_id = rule.get("id", "")  # internal Kibana document ID (needed for terraform import)
     interval = rule.get("interval", "5m")
     from_val = rule.get("from", "now-6m")
     tags = rule.get("tags", [])
@@ -127,7 +128,9 @@ def rule_to_tf(rule: dict, idx: int) -> tuple[str, str, str]:
         f"# {name}",
         f"# =============================================================================",
         f"# Imported from Kibana — review and adjust before committing.",
-        f"# rule_id: {rid}",
+        f"#",
+        f"# rule_id:   {rid}",
+        f"# kibana_id: {kibana_id}  ← use THIS id for terraform import",
         f"# =============================================================================",
         f"",
         f'module "{mod}" {{',
@@ -278,6 +281,7 @@ def main():
     out.write_text(content)
 
     rid = rule.get("rule_id", "")
+    kibana_id = rule.get("id", "")
     print(f"""
 {'═' * 60}
   ✓ Generated: terraform/custom_rules/{fname}
@@ -290,13 +294,20 @@ def main():
   2. Add to terraform/custom_rules/outputs.tf:
      {mod:<40}= module.{mod}.rule_id
 
-  3. Import into Terraform state:
+  3. Register the new module:
+     cd terraform && terraform init
+
+  4. Import into Terraform state:
      cd terraform
      terraform import \\
        'module.custom_rules.module.{mod}.elasticstack_kibana_security_detection_rule.this' \\
-       'default/{rid}'
+       'default/{kibana_id}'
 
-  4. Verify:  terraform plan
+  5. Verify:  terraform plan
+
+  ⚠  IMPORTANT: The import command uses the internal Kibana
+     document id ({kibana_id}), NOT the rule_id.
+     These are different UUIDs! The rule_id is {rid}.
 """)
 
 

@@ -87,6 +87,17 @@ cd "${TF_DIR}"
 terraform init -input=false
 ok "Terraform initialised."
 
+# ----- 8. Terraform Apply (with retry for prebuilt rules provider quirk) ------
+# The elasticstack provider reports an error on the FIRST apply when prebuilt
+# rules are installed (plans 0, gets 1419). The rules DO install — the state
+# just needs a second apply to reconcile. This only happens on a fresh instance.
+info "Deploying baseline rules and exceptions …"
+if ! terraform apply -auto-approve -input=false 2>&1 | tee /dev/stderr | grep -q 'Apply complete'; then
+  warn "First apply hit the prebuilt-rules provider quirk — retrying …"
+  terraform apply -auto-approve -input=false
+fi
+ok "Baseline deployed."
+
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║   Detection-as-Code lab is ready!                        ║${NC}"
@@ -96,7 +107,6 @@ echo -e "${GREEN}║   Kibana        : http://localhost:5601                    
 echo -e "${GREEN}║   Username      : elastic                                 ║${NC}"
 echo -e "${GREEN}║   Password      : ${ELASTIC_PASSWORD}                              ║${NC}"
 echo -e "${GREEN}║                                                           ║${NC}"
-echo -e "${GREEN}║   Next steps:                                             ║${NC}"
-echo -e "${GREEN}║     cd terraform && terraform plan                        ║${NC}"
-echo -e "${GREEN}║     cd terraform && terraform apply                       ║${NC}"
+echo -e "${GREEN}║   Rules, exceptions, and prebuilt rules are deployed.     ║${NC}"
+echo -e "${GREEN}║   Open Kibana → Security → Rules to verify.               ║${NC}"
 echo -e "${GREEN}╚═══════════════════════════════════════════════════════════╝${NC}"

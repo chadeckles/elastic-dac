@@ -61,10 +61,8 @@ fi
 # ----- Detection Rules --------------------------------------------------------
 echo -e "${CYAN}Detection Rules${NC}"
 RULES_RESPONSE=$(curl -s -u "elastic:${ELASTIC_PASSWORD}" \
-  -X POST "${KB_URL}/api/detection_engine/rules/_find" \
-  -H 'kbn-xsrf: true' \
-  -H 'Content-Type: application/json' \
-  -d '{"per_page": 1}' 2>/dev/null)
+  "${KB_URL}/api/detection_engine/rules/_find?per_page=1" \
+  -H 'kbn-xsrf: true' 2>/dev/null)
 RULES_TOTAL=$(echo "$RULES_RESPONSE" | grep -o '"total":[0-9]*' | head -1 | cut -d: -f2)
 if [[ -n "$RULES_TOTAL" ]]; then
   pass "Total detection rules: ${RULES_TOTAL}"

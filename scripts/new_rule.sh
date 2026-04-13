@@ -247,7 +247,7 @@ cat > "$RULES_DIR/$FILE_NAME" << RULEEOF
 # =============================================================================
 # ${RULE_NAME}
 # =============================================================================
-# $(echo "$RULE_DESC" | fold -s -w 75)
+# $(echo "$RULE_DESC" | fold -s -w 73 | sed 's/^/# /' | tail -n +2)
 #
 # MITRE ATT&CK:  ${PICKED_TACTIC_ID} ${PICKED_TACTIC_NAME}$(if $HAS_TECHNIQUE; then echo " → ${TECH_ID} ${TECH_NAME}"; fi)
 # Team:          ${TEAM_NAME}

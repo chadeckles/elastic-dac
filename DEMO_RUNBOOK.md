@@ -19,7 +19,7 @@
 5. [Demo 4 — Add an Exception List (Without Touching the Rule)](#5-demo-4--add-an-exception-list-without-touching-the-rule)
 6. [Demo 5 — Modify an Exception (Rule Logic Unchanged)](#6-demo-5--modify-an-exception-rule-logic-unchanged)
 7. [Demo 6 — Install Prebuilt Rules via Terraform](#7-demo-6--install-prebuilt-rules-via-terraform)
-8. [Demo 7 — Modify a Prebuilt Rule in Kibana, Import Back to Git](#8-demo-7--modify-a-prebuilt-rule-in-kibana-import-back-to-git)
+8. [Demo 7 — Fork a Prebuilt Rule, Import the Custom Copy into Git](#8-demo-7--fork-a-prebuilt-rule-import-the-custom-copy-into-git)
 9. [Demo 8 — Change a Query in Terraform and Redeploy](#9-demo-8--change-a-query-in-terraform-and-redeploy)
 10. [Demo 9 — Convert a Rule to a Building Block](#10-demo-9--convert-a-rule-to-a-building-block)
 11. [Demo 10 — The CI/CD Flow (PR → Plan → Merge → Apply)](#11-demo-10--the-cicd-flow-pr--plan--merge--apply)
@@ -33,14 +33,8 @@ Run these **before** hitting record. The demo should start with everything
 healthy and some rules already deployed.
 
 ```bash
-# Start the local Elastic Stack
+# Start the local Elastic Stack (also deploys baseline rules automatically)
 make setup
-
-# Verify everything is healthy
-make validate-lab
-
-# Deploy the existing sample rules + exceptions
-make apply
 
 # Open Kibana in a browser tab (keep it ready)
 open http://localhost:5601/app/security/rules
@@ -148,11 +142,19 @@ Edit the file — fill in the module block with the values above.
 # 1. Run unit tests — catches missing fields, bad tags, etc.
 make test
 
-# 2. Preview what Terraform will do
+# 2. Register the new module with Terraform
+cd terraform && terraform init && cd ..
+# → You should see: "- custom_rules.<your_module> in modules/detection_rule"
+#
+# ⚠️  This is required every time you add a new module block.
+#    Without it, terraform plan will fail with "Module not installed".
+#    Always run from the terraform/ directory, not the repo root.
+
+# 3. Preview what Terraform will do
 make plan
 # → Show the output: "1 to add, 0 to change, 0 to destroy"
 
-# 3. Deploy
+# 4. Deploy
 make apply
 
 # 4. Verify in Kibana
@@ -186,23 +188,21 @@ version-controlled. If this was a real workflow, this would go through a PR."
 4. Click **Create & enable rule**
 5. Confirm it appears in the rules list
 
-### Step 2: Find the rule_id
+### Step 2: Understand the two Kibana IDs
 
-**Option A — via the helper script:**
-```bash
-make list-rules
-# → Find "Password Change Detected" and note the rule_id
-```
+> ⚠️ **Critical gotcha — Kibana has TWO different IDs for every rule:**
+>
+> | ID | Example | Used for |
+> |----|---------|----------|
+> | `rule_id` | `b4f2c3c2-8be9-...` | Kibana API lookups, referenced in your `.tf` file |
+> | `id` (internal document ID) | `6e5e94d2-9eab-...` | **`terraform import` — you MUST use this one** |
+>
+> If you use the wrong one, `terraform import` will fail with
+> "Cannot import non-existent remote object", but `terraform apply` will
+> fail with a **409 conflict** because the `rule_id` already exists.
 
-**Option B — in Kibana:**
-1. Click on the rule name
-2. Look at the URL — it contains the rule's internal ID
-3. Or use the Detection Engine API directly:
-   ```bash
-   curl -s -u elastic:changeme \
-     'http://localhost:5601/api/detection_engine/rules/_find?per_page=5&sort_field=created_at&sort_order=desc' \
-     -H 'kbn-xsrf: true' | python3 -m json.tool | head -30
-   ```
+You don't need to look these up manually — the import script fetches both
+and prints them in the generated `.tf` header and in the next-steps output.
 
 ### Step 3: Generate the Terraform file
 
@@ -215,8 +215,15 @@ This generates a `.tf` file in `terraform/custom_rules/`. Show the output.
 ### Step 4: Review and clean up the generated file
 
 ```bash
-# Open the generated file
-cat terraform/custom_rules/006_password_change_detected.tf
+# Open the generated file (number will vary — check the script output)
+cat terraform/custom_rules/007_password_change_detected.tf
+```
+
+**Show the audience the file header — it now includes both IDs:**
+
+```
+# rule_id:   b4f2c3c2-...   ← the Kibana API/query identifier
+# kibana_id: 6e5e94d2-...   ← use THIS for terraform import
 ```
 
 **Show the audience:** "The script generates a starting point — we always
@@ -233,22 +240,61 @@ Add the new module to `terraform/custom_rules/outputs.tf`:
 password_change_detected = module.password_change_detected.rule_id
 ```
 
-### Step 6: Import into Terraform state
+### Step 6: Initialise the new module
+
+Any time you add a new `module` block, Terraform needs to register it:
+
+```bash
+cd terraform && terraform init
+```
+
+You should see: `- custom_rules.password_change_detected in modules/detection_rule`
+
+> **Common mistake:** Running `terraform init` from the repo root instead of
+> `terraform/`. From the repo root it says "empty directory" — you need to be
+> inside the `terraform/` folder.
+
+### Step 7: Import into Terraform state
+
+The import script printed the exact command — copy it from the terminal output.
+It looks like this (your UUIDs will be different):
 
 ```bash
 cd terraform
 
 terraform import \
   'module.custom_rules.module.password_change_detected.elasticstack_kibana_security_detection_rule.this' \
-  'default/<rule_id_from_step_2>'
-
-# Verify no drift
-terraform plan
-# → Should show "No changes" or very minimal diff
+  'default/<kibana_id>'
 ```
 
-**Talking point:** "The rule already exists in Kibana. We're telling Terraform
-'this resource is yours now.' From here forward, all changes go through Git."
+> ⚠️ **Use the `kibana_id` (internal document ID) — NOT the `rule_id`.**
+> Both are printed in the generated `.tf` file header and in the script output.
+> The `rule_id` is what Kibana uses for API lookups. The `kibana_id` is the
+> Saved Object document ID that the Terraform provider uses internally.
+
+```bash
+# Verify — should show 0 to add, ≤1 to change, 0 to destroy
+terraform plan
+```
+
+The "1 to change" is expected — Terraform will sync standard tags
+(`detection-as-code`, `terraform-managed`) and module defaults (`author`,
+`license`) onto the imported rule. That's the point — the framework
+enforces consistency.
+
+```bash
+# Apply the minor drift
+terraform apply -auto-approve
+```
+
+### Step 8: Verify in Kibana
+
+Refresh the rules page — the rule should still be there, now with the standard
+tags applied.
+
+**Talking point:** "The rule already existed in Kibana. We told Terraform
+'this resource is yours now.' From here forward, all changes go through Git.
+The import script gives you the exact command — no hunting for IDs."
 
 ---
 
@@ -305,7 +351,17 @@ Add to `terraform/exceptions/outputs.tf`:
 password_change_svc_accounts = module.password_change_svc_accounts.list_id
 ```
 
-### Step 3: Test and deploy
+### Step 3: Register the new module
+
+```bash
+cd terraform && terraform init && cd ..
+```
+
+> ⚠️ **Every new `module` block requires `terraform init`** — rules AND
+> exceptions. Without it you'll get: `Error: Module not installed`.
+> Always run from the `terraform/` directory.
+
+### Step 4: Test and deploy
 
 ```bash
 make test    # Validates structure
@@ -317,7 +373,7 @@ make apply
 "Notice — we're adding 1 exception list and 1 exception item. Zero changes to
 any detection rules. The exception is a standalone resource."
 
-### Step 4: Verify in Kibana
+### Step 5: Verify in Kibana
 
 Navigate to **Security → Rules → Shared Exception Lists** — show the new list.
 
@@ -408,44 +464,77 @@ That boundary is intentional."
 
 ---
 
-## 8. Demo 7 — Modify a Prebuilt Rule in Kibana, Import Back to Git
+## 8. Demo 7 — Fork a Prebuilt Rule, Import the Custom Copy into Git
 
-> **Goal:** Show what happens when someone customises a prebuilt rule in the
-> GUI and wants to track that change.
+> **Goal:** Show what happens when a detection engineer needs to customise a
+> prebuilt rule beyond what exceptions can handle — and bring that fork under
+> version control.
 
-### Step 1: Modify a prebuilt rule in Kibana
+> ⚠️ **Kibana 8.17+ treats prebuilt rules as immutable.** You cannot directly
+> edit the query or core fields of a vendor-maintained rule. The supported
+> workflow is: **Duplicate → Edit the copy → Import into Terraform.**
 
-1. In **Security → Rules**, find a prebuilt rule (e.g., search for a
-   common one like "Unusual Login Activity" or any enabled prebuilt rule)
-2. Click **Edit rule settings**
-3. Make a change:
-   - Modify the query (e.g., add an extra condition)
-   - Or change the severity
-4. Save
+### Step 1: Duplicate a prebuilt rule in Kibana
 
-### Step 2: Explain the approach
+1. In **Security → Rules**, find a prebuilt rule (e.g., search for
+   "GitHub Repository Deleted" or any prebuilt rule relevant to your org)
+2. Click the rule name to open it
+3. Click the **⋯ (actions menu)** → **Duplicate rule**
+4. Kibana creates an editable copy named "**\[Rule Name\] \[Duplicate\]**"
 
-"Prebuilt rules that you've customised in Kibana are now a fork — Elastic
-won't overwrite your changes on updates. If you want this customised
-version in Git, you treat it like any other GUI-created rule."
+### Step 2: Edit the duplicated rule
 
-### Step 3: Import it
+1. Open the duplicate rule → click **Edit rule settings**
+2. All fields are now editable. Make a change:
+   - **Definition tab:** Modify the query (e.g., add a `NOT` clause or
+     narrow the index pattern)
+   - **About tab:** Change severity, risk score, or add tags
+3. Rename the rule to remove the `[Duplicate]` suffix — give it a clear name
+   like `GitHub Repository Deleted — Custom`
+4. Click **Save changes**
+
+### Step 3: Explain the approach to the audience
+
+"Prebuilt rules are maintained by Elastic — they get updated automatically,
+and you can't edit them directly. When you need to customise one beyond what
+exceptions can handle, you duplicate it. The copy is a fully custom rule that
+you own. We bring it into Git like any other GUI-created rule."
+
+### Step 4: Import the custom copy
 
 ```bash
+# Find the duplicated rule
 make list-rules
-# Find the modified rule, note the rule_id
+# → Look for the renamed rule, confirm it shows as "custom" not "prebuilt"
 
-make import-rule NAME="<rule name>"
+# Import it
+make import-rule NAME="GitHub Repository Deleted"
 ```
 
-### Step 4: Review the generated .tf file
+The script generates a `.tf` file with both IDs in the header. Follow the
+printed next-steps (same as Demo 3 — add to outputs.tf, `terraform init`,
+`terraform import` with the `kibana_id`, `terraform plan`).
 
-Open it, show it looks just like any custom rule. This is now tracked in Git
+### Step 5: Review the generated .tf file
+
+Open it — show it looks just like any custom rule. This is now tracked in Git
 like everything else.
 
+### Step 6: (Optional) Disable the original prebuilt rule
+
+If the custom copy replaces the prebuilt original, disable the original in
+Kibana to avoid duplicate alerts:
+
+1. Go back to the original prebuilt rule
+2. Toggle it off (or use bulk actions)
+
+"Now we have one source of truth — the forked version in Git. The original
+prebuilt rule stays installed but disabled, so Elastic updates still flow in
+if we ever want to compare."
+
 **Talking point:** "In practice, most teams leave prebuilt rules alone and use
-exceptions for tuning. But when you do need to fork one, here's the path back
-to version control."
+exceptions for tuning. But when you do need to fork one — duplicate, edit,
+import into Git. That's the path back to version control."
 
 ---
 

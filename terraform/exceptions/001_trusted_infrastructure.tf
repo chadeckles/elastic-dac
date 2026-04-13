@@ -43,6 +43,20 @@ module "trusted_infrastructure" {
         }
       ]
     },
+        {
+      item_id     = "nat-gateway"
+      name        = "NAT Gateway"
+      description = "NAT gateway generates auth noise from outbound traffic."
+      tags        = ["network"]
+      entries = [
+        {
+          field    = "source.ip"
+          type     = "match"
+          operator = "included"
+          value    = "10.0.1.1"
+        }
+      ]
+    },
   ]
 
   space_id = var.space_id

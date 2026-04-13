@@ -68,11 +68,11 @@ validate: ## Run terraform validate
 
 .PHONY: plan
 plan: ## Run terraform plan
-	cd $(TF_DIR) && terraform plan -input=false
+	cd $(TF_DIR) && terraform init -input=false >/dev/null 2>&1 && terraform plan -input=false
 
 .PHONY: apply
 apply: ## Run terraform apply (auto-approve)
-	cd $(TF_DIR) && terraform apply -auto-approve -input=false
+	cd $(TF_DIR) && terraform init -input=false >/dev/null 2>&1 && terraform apply -auto-approve -input=false
 
 .PHONY: destroy
 destroy: ## Run terraform destroy (auto-approve)
@@ -146,13 +146,13 @@ cheatsheet: ## 📋 Print a quick-reference cheatsheet to the terminal
 # ---------------------------------------------------------------------------
 .PHONY: test
 test: ## Run pytest rule unit tests
-	pip install -q -r $(TESTS_DIR)/requirements.txt
-	pytest
+	python3 -m pip install -q -r $(TESTS_DIR)/requirements.txt
+	python3 -m pytest
 
 .PHONY: test-verbose
 test-verbose: ## Run pytest with full output
-	pip install -q -r $(TESTS_DIR)/requirements.txt
-	pytest -v --tb=long
+	python3 -m pip install -q -r $(TESTS_DIR)/requirements.txt
+	python3 -m pytest -v --tb=long
 
 # ---------------------------------------------------------------------------
 # Validation
