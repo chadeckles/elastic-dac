@@ -1,0 +1,47 @@
+# =============================================================================
+# TEMPLATE — Add rule-scoped exception items from a separate file
+# =============================================================================
+#
+# Use this when you want to keep a rule's exception items in their own .tf
+# file (for example because multiple analysts manage them) rather than inline
+# in the rule definition.
+#
+# 1. Copy:    cp _template.tf.example NNN_<rule>_extras.tf
+# 2. Pick a target list_id:
+#    a) the rule's auto-created rule-default list  (recommended), or
+#    b) a Kibana-managed list that exists in your space.
+# 3. Fill in the items.
+# 4. Add to outputs.tf if you want item_ids exposed.
+# =============================================================================
+
+module "my_rule_extras" { # ← RENAME
+  source = "../modules/rule_exception_items"
+
+  # Option A — attach to a rule-default list created by a sibling rule module.
+  # `rule_default_lists` is a map exposed via the rule_exceptions child module
+  # call in ../main.tf. Keys are rule module names from custom_rules/.
+  list_id = var.rule_default_lists["brute_force_login"]
+
+  # Option B — attach to an explicit list_id (rule-default or shared list
+  # that already exists in Kibana). Comment out option A above to use this.
+  # list_id = "brute-force-login-attempts-exceptions"
+
+  space_id = var.space_id
+
+  items = [
+    {
+      item_id     = "my-extra-item"
+      name        = "My extra exception"
+      description = "Why this exception exists."
+      tags        = ["analyst:alice"]
+      entries = [
+        {
+          field    = "source.ip"
+          type     = "match"
+          operator = "included"
+          value    = "10.20.30.40"
+        }
+      ]
+    },
+  ]
+}

@@ -6,7 +6,7 @@ Syncs with Elastic's detection-rules repository and generates a changelog
 of new, modified, and removed detection rules since the last sync.
 
 This script is designed to run:
-  - Weekly via GitHub Actions (see .github/workflows/sync-detection-rules.yml)
+  - Weekly via the scheduled GitLab pipeline (see .gitlab/ci/sync-upstream.gitlab-ci.yml)
   - Locally via `make sync-upstream`
 
 Usage:

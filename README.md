@@ -43,7 +43,7 @@ management.
 | **Exception Lists** | Exception containers with sample items for false-positive reduction |
 | **Prebuilt Rules** | Optional install of Elastic's vendor-provided rules |
 | **Pytest Suite** | Unit tests enforcing Team tags, MITRE mapping, field validation |
-| **GitHub Actions** | CI/CD with `terraform plan` on PRs and `terraform apply` on merge |
+| **GitLab CI/CD** | MR pipelines run `terraform plan`, manual-approval `apply` on `main`, S3-backed state, dedicated self-hosted runners |
 | **Interactive Wizards** | `make new-rule` and `make new-exception` for non-coder detection engineers |
 | **GUI Rule Import** | `make import-rule` brings Kibana-created rules into Git/Terraform |
 | **MITRE ATT&CK Lookup** | ID-only MITRE mapping — module auto-resolves names and URLs |
@@ -54,7 +54,8 @@ management.
 Per [Elastic's DaC guide](https://www.elastic.co/security-labs/detection-as-code-timeline-and-new-features):
 
 - **Version control** — All rules live in Git; every change is tracked
-- **Peer review** — PRs gate all rule changes; plan output is posted as a comment
+- **Peer review** — Merge requests gate all rule changes; the plan output is
+  surfaced as an MR comment by the GitLab pipeline
 - **Automated testing** — Pytest validates rule structure, tags, MITRE mapping
 - **Automated deployment** — `terraform apply` on merge to `main`
 - **Consistency** — Modules enforce standards across all rules
@@ -69,7 +70,8 @@ Terraform and Kibana based on what each tool does best:
 | Responsibility | Managed in | Why |
 |---|---|---|
 | **Custom detection rules** | Terraform (`custom_rules/`) | Your org writes these — they need version control, peer review, and CI/CD |
-| **Exception lists** | Terraform (`exceptions/`) | Suppression logic is critical context that should be reviewed and tracked in Git |
+| **Rule-scoped exception items** | Terraform (`rule_exceptions/` or inline on the rule) | Mirror what the Kibana Rules UI writes when you click "Add rule exception" — narrow, per-rule suppression |
+| **Shared exception lists** | Terraform (`exceptions/`) | Multi-rule suppression containers reviewed and tracked in Git |
 | **Prebuilt rule installation & updates** | Terraform (`prebuilt_rules.tf`) | Keeps vendor rules current automatically across environments |
 | **Prebuilt rule enablement** | Kibana Rules UI | Kibana has purpose-built filtering, bulk actions, and tag-based selection for this — no need to replicate it in code |
 | **Alert triage & investigation** | Kibana Security app | Operational work that doesn't belong in code |
@@ -93,10 +95,10 @@ in `.tf` files.
 │  terraform/modules/       →  Reusable TF Modules                │
 │  tests/                   →  Pytest Unit Tests                  │
 └──────────────┬──────────────────────────────────┬───────────────┘
-               │ PR → plan                        │ merge → apply
+               │ MR → plan                       │ merge → apply
                ▼                                  ▼
-┌──────────────────────┐            ┌──────────────────────────┐
-│  GitHub Actions CI   │            │   GitHub Actions CD      │
+┌────────────────────┐            ┌────────────────────────┐
+│   GitLab CI — Plan   │            │   GitLab CI — Apply      │
 │  ┌────────────────┐  │            │  ┌─────────────────────┐ │
 │  │ terraform fmt   │  │            │  │ terraform apply     │ │
 │  │ terraform init  │  │            │  │  → Detection Rules  │ │
@@ -122,25 +124,31 @@ in `.tf` files.
 
 ```
 elastic-dac/
-├── .github/workflows/          # CI/CD pipelines
+├── .gitlab-ci.yml               # GitLab CI/CD pipeline
+├── .gitlab/
+│   ├── GITLAB_RUNNERS.md        # AWS S3 + dedicated runner setup guide
+│   └── ci/sync-upstream.gitlab-ci.yml   # Scheduled upstream-sync pipeline
 ├── terraform/
-│   ├── main.tf                 # Provider config + child module calls
-│   ├── variables.tf            # Root variables
-│   ├── outputs.tf              # Root outputs
-│   ├── prebuilt_rules.tf       # Elastic prebuilt rule management
+│   ├── main.tf                  # Provider config + child module calls
+│   ├── backend.tf.example       # Copy → backend.tf to enable S3 remote state
+│   ├── variables.tf             # Root variables
+│   ├── outputs.tf               # Root outputs
+│   ├── prebuilt_rules.tf        # Elastic prebuilt rule management
 │   ├── modules/
-│   │   ├── detection_rule/     # Reusable module: one detection rule
-│   │   │   └── mitre_lookup.tf # MITRE ATT&CK ID → name/URL lookup maps
-│   │   └── exception_list/     # Reusable module: one exception list + items
-│   ├── custom_rules/           # One numbered .tf file per detection rule
-│   └── exceptions/             # One numbered .tf file per exception list
-├── tests/                      # Pytest unit tests
-├── scripts/                    # Setup, teardown, sync, wizards, import
-│   ├── import_gui_rule.py      # Import a Kibana GUI rule into Terraform
-│   └── demo_cleanup.sh         # Reset environment between demo runs
-├── docker-compose.yml          # Local dev stack (optional)
-├── Makefile                    # Shortcut targets
-├── DEMO_RUNBOOK.md             # Step-by-step demo walkthrough
+│   │   ├── detection_rule/      # One detection rule + optional inline exceptions
+│   │   │   └── mitre_lookup.tf  # MITRE ATT&CK ID → name/URL lookup maps
+│   │   ├── exception_list/      # Shared exception list + items
+│   │   └── rule_exception_items/   # Items attached to an existing list
+│   ├── custom_rules/            # One numbered .tf file per detection rule
+│   ├── exceptions/              # One .tf file per shared exception list
+│   └── rule_exceptions/         # One .tf file per rule-scoped tuning bundle
+├── tests/                       # Pytest unit tests
+├── scripts/                     # Setup, teardown, sync, wizards, import
+│   ├── import_gui_rule.py       # Import a Kibana GUI rule into Terraform
+│   └── demo_cleanup.sh          # Reset environment between practice runs
+├── docker-compose.yml           # Local dev stack (optional)
+├── Makefile                     # Shortcut targets
+├── WALKTHROUGH.md               # Practitioner how-to guide
 └── README.md
 ```
 
@@ -237,24 +245,26 @@ Copy _template.tf.example → terraform/custom_rules/NNN_my_rule.tf
     make apply         ← Deploy to Elastic Security
 ```
 
-### CI/CD (Pull Request → Merge)
+### CI/CD (Merge Request → Apply)
 
 ```
-Push branch → Open PR
+Push branch → Open MR
          │
-    ┌────┴─────────────────┐
-    │ terraform fmt -check │
-    │ terraform validate   │
-    │ terraform plan       │
-    │ pytest tests         │
-    └────┬─────────────────┘
+    ┌────┴───────────────────┐
+    │ pytest tests           │
+    │ terraform fmt -check   │
+    │ terraform validate     │
+    │ terraform plan         │
+    └────┬───────────────────┘
          │
-    Plan output posted as PR comment
+    Plan summary surfaced inline on the MR
          │
-    PR merged to main
+    MR approved → merged to main
+         │
+    Manual approval on `terraform:apply` job
          │
          ▼
-    terraform apply -auto-approve
+    terraform apply tfplan  (S3 state, DynamoDB lock)
          │
     Rules deployed to Elastic Security
 ```
@@ -306,6 +316,7 @@ See `modules/detection_rule/variables.tf` for the full list of optional inputs
 Wraps [`elasticstack_kibana_security_exception_list`](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_security_exception_list)
 and [`elasticstack_kibana_security_exception_item`](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_security_exception_item).
 Creates **one** exception list container with child items per module call.
+Use this for **shared** lists referenced by multiple rules.
 
 <details>
 <summary>Module interface</summary>
@@ -328,6 +339,26 @@ See `modules/exception_list/variables.tf` for the full interface including
 | `item_ids` | Map of item_id → Kibana ID |
 
 </details>
+
+### `rule_exception_items`
+
+Wraps [`elasticstack_kibana_security_exception_item`](https://registry.terraform.io/providers/elastic/elasticstack/latest/docs/resources/kibana_security_exception_item)
+**only** — creates one or more exception items attached to an existing list.
+Use this when you want analyst tuning items to live in a separate file from
+the rule definition while still attaching to the rule's auto-created
+rule-default list.
+
+| Input | Type | Description |
+|---|---|---|
+| `list_id` | `string` | list_id of an existing exception list (typically `module.<rule>.rule_default_exception_list_id`) |
+| `items` | `list(object)` | Exception items with entries (same schema as `exception_list.items`) |
+| `space_id` | `string` | Kibana space ID |
+| `namespace_type` | `string` | `single` (default) or `agnostic` |
+
+| Output | Description |
+|---|---|
+| `item_ids` | Map of item_id → Kibana ID |
+| `list_id` | Passthrough of the list the items were attached to |
 
 ---
 
@@ -384,9 +415,61 @@ See `modules/exception_list/variables.tf` for the full interface including
 
 ## Adding an Exception
 
+Two patterns, pick the smallest scope that solves your problem:
+
+| Scope | Where it lives | Resource | Use when |
+|---|---|---|---|
+| **Rule-scoped** *(production default)* | inline `rule_exceptions = [...]` on the rule, or [`terraform/rule_exceptions/`](terraform/rule_exceptions/) | `kibana_security_exception_item` attached to the rule's auto-created default list | Tuning **one** rule. Mirrors what the Kibana Rules UI writes when you click "Add rule exception". |
+| **Shared list** | [`terraform/exceptions/`](terraform/exceptions/) | `kibana_security_exception_list` + child items | Suppression container referenced by **multiple** rules (e.g. trusted infrastructure). |
+
+### Rule-scoped exceptions
+
+Add an inline list directly to the rule. The `detection_rule` module
+auto-creates a per-rule exception list and attaches it.
+
+```hcl
+module "brute_force_login" {
+  source = "../modules/detection_rule"
+  # … existing fields …
+
+  rule_exceptions = [
+    {
+      item_id     = "vuln-scanner"
+      name        = "Authorized vulnerability scanner"
+      description = "Quarterly scanner deliberately probes auth endpoints."
+      tags        = ["false-positive-reduction"]
+      entries = [{
+        field    = "user.name"
+        type     = "match"
+        operator = "included"
+        value    = "svc_vuln_scanner"
+      }]
+    },
+  ]
+}
+```
+
+To keep the rule file lean while analysts add tuning items, drop a file in
+[`terraform/rule_exceptions/`](terraform/rule_exceptions/) instead and reference the rule's
+auto-generated list:
+
+```hcl
+module "brute_force_login_extras" {
+  source   = "../modules/rule_exception_items"
+  list_id  = var.rule_default_lists["brute_force_login"]
+  space_id = var.space_id
+
+  items = [ /* … kibana_security_exception_item entries … */ ]
+}
+```
+
+`rule_default_lists` is wired automatically from
+[terraform/custom_rules/outputs.tf](terraform/custom_rules/outputs.tf) by the root module.
+
+### Shared exception list
+
 > **🧙 Recommended:** Run `make new-exception` — an interactive wizard that
-> walks you through creating an exception list with items. No HCL knowledge
-> required.
+> walks you through creating a shared exception list with items.
 
 <details>
 <summary>Manual steps</summary>
@@ -497,40 +580,54 @@ make test-verbose      # Full output with tracebacks
 
 ## CI/CD Pipeline
 
-GitHub Actions workflows in `.github/workflows/` implement the full DaC
-lifecycle.
+The pipeline lives in [.gitlab-ci.yml](.gitlab-ci.yml) and runs on **dedicated
+self-hosted GitLab Runners** with **AWS S3** for both Terraform remote state
+and the runner's distributed cache.
 
-<details>
-<summary>Pipeline details</summary>
+### Pipeline stages
 
-### detection-as-code.yml
+| Stage | Jobs | Trigger |
+|---|---|---|
+| `test` | `pytest`, `terraform:fmt`, `terraform:validate` | MRs and pushes to `main` |
+| `plan` | `terraform:plan` (artifact `tfplan`), `terraform:plan-summary` | MRs and pushes to `main` |
+| `apply` | `terraform:apply` (manual approval, `resource_group: production-apply`) | `main` only |
 
-**On PR:** `terraform fmt -check` → `terraform init` → `terraform validate` →
-`terraform plan` → post plan output as PR comment.
+### Required CI/CD variables
 
-**On merge to `main`:** `terraform apply -auto-approve`.
-
-### Required GitHub Secrets
-
-| Secret | Description |
+| Variable | Purpose |
 |---|---|
-| `ELASTICSEARCH_USERNAME` | Elasticsearch username |
-| `ELASTICSEARCH_PASSWORD` | Elasticsearch password |
-| `ELASTICSEARCH_ENDPOINTS` | Comma-separated ES endpoints |
-| `KIBANA_USERNAME` | Kibana username |
-| `KIBANA_PASSWORD` | Kibana password |
-| `KIBANA_ENDPOINT` | Kibana URL |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_DEFAULT_REGION` | S3 state + cache (or use the runner's IAM role) |
+| `TF_STATE_BUCKET`, `TF_STATE_KEY`, `TF_STATE_LOCK_TABLE` | Remote state config |
+| `RUNNER_TAG` | Tag on the dedicated runner (default `elastic-dac`) |
+| `ELASTICSEARCH_USERNAME` / `_PASSWORD` / `_ENDPOINTS` | Elastic creds |
+| `KIBANA_USERNAME` / `_PASSWORD` / `_ENDPOINT` | Kibana creds |
+| `GITLAB_TOKEN` | Project access token used by the upstream sync job to open MRs |
 
-</details>
+Full AWS provisioning, IAM policy, and runner registration are in
+[.gitlab/GITLAB_RUNNERS.md](.gitlab/GITLAB_RUNNERS.md). Local-dev backend
+remains the on-disk default until you copy `terraform/backend.tf.example` to
+`terraform/backend.tf`.
+
+### Dedicated runners + S3
+
+- Runner registration uses `--locked --run-untagged=false --tag-list elastic-dac`
+  so jobs are pinned to your fleet and never spill onto shared SaaS runners.
+- The runner's `[runners.cache]` block points at an S3 bucket so multiple
+  runner instances share the `.terraform/` plugin cache and pipeline
+  artifacts (see
+  [.gitlab/GITLAB_RUNNERS.md §2c](.gitlab/GITLAB_RUNNERS.md#2c-configure-the-s3-backed-cache)).
+- Concurrent applies serialise via `resource_group: production-apply` plus
+  the DynamoDB state lock.
 
 ---
 
 ## Upstream Rule Sync
 
-A weekly GitHub Action pulls the latest from
+A scheduled GitLab pipeline ([.gitlab/ci/sync-upstream.gitlab-ci.yml](.gitlab/ci/sync-upstream.gitlab-ci.yml))
+pulls the latest from
 [`elastic/detection-rules`](https://github.com/elastic/detection-rules), diffs
-TOML rule files against the last sync point, and opens a PR with a rich
-changelog.
+TOML rule files against the last sync point, and opens a Merge Request with a
+rich changelog.
 
 <details>
 <summary>Sync details</summary>
@@ -540,7 +637,11 @@ changelog.
 1. Clones/fetches the upstream `elastic/detection-rules` repo
 2. Diffs TOML rule files since the last tracked SHA
 3. Generates a timestamped changelog entry (new / modified / removed rules)
-4. Opens a PR with the changelog for review
+4. Opens a Merge Request with the changelog for review
+
+Configure the schedule via **Settings → CI/CD → Schedules** with the variable
+`SYNC_UPSTREAM=true` (e.g. `0 8 * * 1`). Without that variable the job is
+skipped, so it never runs on push pipelines.
 
 ### Running locally
 
@@ -604,7 +705,8 @@ make apply            # Deploy
 
 ## References
 
-- [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md) — Step-by-step demo walkthrough for screen recordings
+- [WALKTHROUGH.md](WALKTHROUGH.md) — Practitioner how-to guide for everyday detection-engineering tasks
+- [.gitlab/GITLAB_RUNNERS.md](.gitlab/GITLAB_RUNNERS.md) — AWS S3 + dedicated runner provisioning guide
 - [MITRE ATT&CK Lookup](terraform/modules/detection_rule/mitre_lookup.tf) — All supported tactic/technique/subtechnique IDs
 - [Elastic's DaC Engineer Guide](https://www.elastic.co/security-labs/detection-as-code-timeline-and-new-features) — Primary methodology guide
 - [DaC Reference Documentation](https://dac-reference.readthedocs.io/en/latest/) — Extended implementation guidance

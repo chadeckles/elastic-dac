@@ -66,8 +66,29 @@ module "brute_force_login" {
     { tactic = "TA0006", techniques = ["T1110"], subtechniques = ["T1110.001"] },
   ]
 
+  # ---- Per-rule exceptions (rule-default list) -------------------------
+  # Inline tuning items live with the rule. Broader/analyst-driven items
+  # are added from terraform/rule_exceptions/001_brute_force_login_extras.tf
+  # against the same rule-default list (via `rule_default_exception_list_id`).
+  rule_exceptions = [
+    {
+      item_id     = "brute-force-vuln-scanner"
+      name        = "Authorized vulnerability scanner"
+      description = "Quarterly scanner deliberately probes auth endpoints."
+      tags        = ["vuln-scan", "false-positive-reduction"]
+      entries = [
+        {
+          field    = "user.name"
+          type     = "match"
+          operator = "included"
+          value    = "svc_vuln_scanner"
+        }
+      ]
+    },
+  ]
+
   # ---- Toggle (inherit directory default or override per-rule) --------
-  enabled = var.default_enabled     # ← set to true/false to override
+  enabled = var.default_enabled # ← set to true/false to override
 
   space_id     = var.space_id
   default_tags = var.default_tags

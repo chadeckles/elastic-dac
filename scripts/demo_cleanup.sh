@@ -10,7 +10,7 @@
 #   bash scripts/demo_cleanup.sh
 #
 # What it does:
-#   1. Reverts terraform/ and DEMO_RUNBOOK.md to the last committed state
+#   1. Reverts terraform/ and WALKTHROUGH.md to the last committed state
 #   2. Removes any demo git branches
 #   3. Runs terraform destroy to clean Elastic
 #   4. Deletes any GUI-created (non-Terraform) custom rules from Kibana

@@ -20,16 +20,18 @@ terraform {
   }
 
   # -----------------------------------------------------------
-  # Backend — default is local; switch to remote for team use.
-  # Uncomment the block below for an S3 or similar backend.
+  # Backend
+  #
+  # Default is local for laptop development. To enable the AWS S3 +
+  # DynamoDB-locked remote state used by the GitLab pipeline:
+  #
+  #   cp backend.tf.example backend.tf
+  #
+  # Backend values (bucket, key, region, lock table) are injected at
+  # init time by the pipeline via -backend-config flags. See:
+  #   ../.gitlab/GITLAB_RUNNERS.md   for the AWS provisioning steps
+  #   ../.gitlab-ci.yml               for the .terraform-init snippet
   # -----------------------------------------------------------
-  # backend "s3" {
-  #   bucket         = "my-tf-state-detection-as-code"
-  #   key            = "elastic/detection-rules/terraform.tfstate"
-  #   region         = "us-east-1"
-  #   dynamodb_table = "terraform-locks"
-  #   encrypt        = true
-  # }
 }
 
 # =============================================================================
@@ -68,8 +70,20 @@ module "custom_rules" {
 }
 
 # Exception lists — each list is its own .tf file in exceptions/
+# These are SHARED lists referenced by multiple rules.
 module "exceptions" {
   source = "./exceptions"
 
   space_id = var.kibana_space_id
+}
+
+# Rule-scoped exception items — each .tf file holds analyst tuning for ONE rule.
+# Uses the elasticstack_kibana_security_exception_item resource directly,
+# attached to the rule's auto-created rule-default list. This is the
+# pattern Elastic Security uses by default in production deployments.
+module "rule_exceptions" {
+  source = "./rule_exceptions"
+
+  space_id           = var.kibana_space_id
+  rule_default_lists = module.custom_rules.rule_default_exception_list_ids
 }

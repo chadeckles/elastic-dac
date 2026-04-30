@@ -48,7 +48,7 @@ module "dns_exfiltration" {
   ]
 
   # ---- Toggle (inherit directory default or override per-rule) --------
-  enabled = var.default_enabled     # ← set to true/false to override
+  enabled = var.default_enabled # ← set to true/false to override
 
   space_id     = var.space_id
   default_tags = var.default_tags

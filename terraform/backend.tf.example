@@ -1,0 +1,28 @@
+# =============================================================================
+# Terraform Backend — AWS S3 + DynamoDB locking
+# =============================================================================
+# Copy this file to backend.tf to enable remote state. Values are populated at
+# init time via `-backend-config` flags from the GitLab pipeline (see the
+# `.terraform-init` snippet in ../.gitlab-ci.yml), so you should NOT hard-code
+# the bucket name, key, or region here.
+#
+# Example:
+#   cp backend.tf.example backend.tf
+#   terraform init \
+#     -backend-config="bucket=company-tfstate-prod" \
+#     -backend-config="key=elastic-dac/terraform.tfstate" \
+#     -backend-config="region=us-east-1" \
+#     -backend-config="dynamodb_table=terraform-locks" \
+#     -backend-config="encrypt=true"
+#
+# Provisioning the bucket + lock table is documented in:
+#   ../.gitlab/GITLAB_RUNNERS.md   §1
+# =============================================================================
+
+terraform {
+  backend "s3" {
+    # Intentionally empty — populated by `-backend-config` in CI.
+    # Local development can use a separate workspace or a backend override file
+    # (terraform init -backend-config=local.s3.tfbackend).
+  }
+}

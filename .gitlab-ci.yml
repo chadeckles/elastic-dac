@@ -1,0 +1,174 @@
+# =============================================================================
+# GitLab CI/CD — Detection as Code (Elastic Security + Terraform)
+# =============================================================================
+# Pipeline overview
+#   • Merge request pipelines  → fmt-check, validate, pytest, plan (artifact)
+#   • Default-branch pipelines → fmt-check, validate, pytest, plan, apply
+#   • Scheduled pipelines      → upstream rule sync (opens an MR)
+#
+# State storage
+#   Terraform state lives in S3 (see terraform/backend.tf.example).
+#   GitLab job logs and plan artifacts are persisted to an S3-backed
+#   distributed cache; configure the `[runners.cache]` block on your
+#   self-hosted runners to point at the same bucket (see GITLAB_RUNNERS.md).
+#
+# Required CI/CD variables (Settings → CI/CD → Variables)
+#   AWS_ACCESS_KEY_ID            (masked, protected) — for S3 state + cache
+#   AWS_SECRET_ACCESS_KEY        (masked, protected)
+#   AWS_DEFAULT_REGION
+#   TF_STATE_BUCKET              e.g. company-tfstate-prod
+#   TF_STATE_KEY                 e.g. elastic-dac/terraform.tfstate
+#   TF_STATE_LOCK_TABLE          e.g. terraform-locks  (DynamoDB)
+#   ELASTICSEARCH_USERNAME / _PASSWORD / _ENDPOINTS
+#   KIBANA_USERNAME / _PASSWORD / _ENDPOINT
+#
+# Runner selection
+#   Jobs use `tags: [$RUNNER_TAG]` so dedicated runners pick them up.
+#   Set the `RUNNER_TAG` CI/CD variable (e.g. `elastic-dac-prod`) to match
+#   the tag configured on your self-hosted GitLab Runner fleet.
+# =============================================================================
+
+include:
+  - local: .gitlab/ci/sync-upstream.gitlab-ci.yml
+
+stages:
+  - test
+  - plan
+  - apply
+
+variables:
+  TF_VERSION: "1.9.7"
+  TF_ROOT: "terraform"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "0"
+  PYTHON_VERSION: "3.12"
+  # Override per-environment if you scope runners by environment
+  RUNNER_TAG: "elastic-dac"
+
+# -----------------------------------------------------------------------------
+# Default policy: every job runs on dedicated self-hosted runners and uses an
+# S3-backed cache. The cache key is per-branch so MRs don't trample main.
+# -----------------------------------------------------------------------------
+default:
+  image: hashicorp/terraform:${TF_VERSION}
+  tags:
+    - $RUNNER_TAG
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-tf"
+    paths:
+      - ${TF_ROOT}/.terraform/
+      - ${TF_ROOT}/.terraform.lock.hcl
+
+# -----------------------------------------------------------------------------
+# Reusable snippets
+# -----------------------------------------------------------------------------
+.terraform-init: &terraform-init |
+  cd "$TF_ROOT"
+  terraform init -input=false \
+    -backend-config="bucket=${TF_STATE_BUCKET}" \
+    -backend-config="key=${TF_STATE_KEY}" \
+    -backend-config="region=${AWS_DEFAULT_REGION}" \
+    -backend-config="dynamodb_table=${TF_STATE_LOCK_TABLE}" \
+    -backend-config="encrypt=true"
+
+.merge-request-or-default:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# =============================================================================
+# Stage: test
+# =============================================================================
+pytest:
+  stage: test
+  image: python:${PYTHON_VERSION}-slim
+  extends: .merge-request-or-default
+  before_script:
+    - pip install --quiet -r tests/requirements.txt
+  script:
+    - pytest --tb=short --no-header -q
+  artifacts:
+    when: always
+    reports:
+      junit: tests/junit.xml
+    expire_in: 1 week
+
+terraform:fmt:
+  stage: test
+  extends: .merge-request-or-default
+  script:
+    - terraform -chdir=$TF_ROOT fmt -check -recursive
+
+terraform:validate:
+  stage: test
+  extends: .merge-request-or-default
+  script:
+    - *terraform-init
+    - terraform validate
+
+# =============================================================================
+# Stage: plan
+# =============================================================================
+terraform:plan:
+  stage: plan
+  extends: .merge-request-or-default
+  needs:
+    - pytest
+    - terraform:fmt
+    - terraform:validate
+  script:
+    - *terraform-init
+    - terraform plan -input=false -out=tfplan
+    - terraform show -no-color tfplan > tfplan.txt
+  artifacts:
+    name: "tfplan-${CI_COMMIT_REF_SLUG}-${CI_PIPELINE_ID}"
+    paths:
+      - ${TF_ROOT}/tfplan
+      - ${TF_ROOT}/tfplan.txt
+    expire_in: 1 week
+    when: always
+
+# Surface the plan diff inside the MR widget
+terraform:plan-summary:
+  stage: plan
+  image: alpine:3.20
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  needs:
+    - terraform:plan
+  script:
+    - apk add --no-cache curl
+    - |
+      SUMMARY=$(grep -E "Plan:|No changes" "${TF_ROOT}/tfplan.txt" | head -1 || echo "Plan generated")
+      echo "### Terraform plan: ${SUMMARY}" > plan-summary.md
+      echo "" >> plan-summary.md
+      echo '<details><summary>Show plan output</summary>' >> plan-summary.md
+      echo '' >> plan-summary.md
+      echo '```terraform' >> plan-summary.md
+      head -c 60000 "${TF_ROOT}/tfplan.txt" >> plan-summary.md
+      echo '```' >> plan-summary.md
+      echo '</details>' >> plan-summary.md
+  artifacts:
+    paths:
+      - plan-summary.md
+    expire_in: 1 week
+
+# =============================================================================
+# Stage: apply  (default branch only, manual approval)
+# =============================================================================
+terraform:apply:
+  stage: apply
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+      allow_failure: false
+  needs:
+    - job: terraform:plan
+      artifacts: true
+  environment:
+    name: production
+    url: $KIBANA_ENDPOINT
+  script:
+    - *terraform-init
+    - terraform apply -input=false -auto-approve tfplan
+  resource_group: production-apply # serialise concurrent applies

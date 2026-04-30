@@ -325,3 +325,53 @@ variable "alert_suppression" {
   })
   default = null
 }
+
+# ---------------------------------------------------------------------------
+# Optional — Per-rule exception items (the "production-default" pattern)
+# ---------------------------------------------------------------------------
+# Most exceptions in real Elastic Security deployments are scoped to a single
+# rule: an analyst tunes one alert by adding an exception via the rule UI,
+# which writes to that rule's auto-created "rule default" exception list.
+#
+# Setting `rule_exceptions` here mirrors that pattern in code: the module
+# creates a narrowly-scoped exception list (one per rule) using the
+# elasticstack_kibana_security_exception_list + _exception_item resources,
+# and automatically attaches it to this rule's `exceptions_list`.
+#
+# Use the larger `exceptions/` directory + exception_list module for
+# org-wide / shared exception lists referenced by multiple rules.
+# ---------------------------------------------------------------------------
+variable "rule_exceptions" {
+  description = <<-EOT
+    Inline, rule-scoped exception items. Each item becomes an
+    elasticstack_kibana_security_exception_item attached to a rule-default
+    exception list named `<rule_slug>-exceptions`. Leave empty to skip.
+  EOT
+  type = list(object({
+    item_id     = string
+    name        = string
+    description = string
+    type        = optional(string, "simple")
+    os_types    = optional(set(string))
+    tags        = optional(list(string), [])
+    expire_time = optional(string)
+    entries = list(object({
+      field    = string
+      type     = string
+      operator = optional(string, "included")
+      value    = optional(string)
+      values   = optional(list(string))
+    }))
+  }))
+  default = []
+}
+
+variable "rule_exception_list_id" {
+  description = <<-EOT
+    Override the auto-generated list_id for the rule-default exception list.
+    Defaults to a slug derived from the rule name. Only relevant when
+    `rule_exceptions` is non-empty.
+  EOT
+  type        = string
+  default     = null
+}
