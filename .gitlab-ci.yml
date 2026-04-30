@@ -7,18 +7,18 @@
 #   • Scheduled pipelines      → upstream rule sync (opens an MR)
 #
 # State storage
-#   Terraform state lives in S3 (see terraform/backend.tf.example).
+#   Terraform state lives in S3 with native S3 state locking (no DynamoDB).
+#   The runner's EC2 instance role provides AWS credentials automatically
+#   via IMDS — no AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY needed in GitLab.
+#
 #   GitLab job logs and plan artifacts are persisted to an S3-backed
 #   distributed cache; configure the `[runners.cache]` block on your
-#   self-hosted runners to point at the same bucket (see GITLAB_RUNNERS.md).
+#   self-hosted runners with AuthenticationType = "iam" (see GITLAB_RUNNERS.md).
 #
 # Required CI/CD variables (Settings → CI/CD → Variables)
-#   AWS_ACCESS_KEY_ID            (masked, protected) — for S3 state + cache
-#   AWS_SECRET_ACCESS_KEY        (masked, protected)
-#   AWS_DEFAULT_REGION
-#   TF_STATE_BUCKET              e.g. company-tfstate-prod
+#   AWS_DEFAULT_REGION           e.g. us-east-1
+#   TF_STATE_BUCKET              e.g. elastic-UPDATEME
 #   TF_STATE_KEY                 e.g. elastic-dac/terraform.tfstate
-#   TF_STATE_LOCK_TABLE          e.g. terraform-locks  (DynamoDB)
 #   ELASTICSEARCH_USERNAME / _PASSWORD / _ENDPOINTS
 #   KIBANA_USERNAME / _PASSWORD / _ENDPOINT
 #
@@ -37,7 +37,7 @@ stages:
   - apply
 
 variables:
-  TF_VERSION: "1.9.7"
+  TF_VERSION: "1.10.5"
   TF_ROOT: "terraform"
   TF_IN_AUTOMATION: "true"
   TF_INPUT: "0"
@@ -68,7 +68,7 @@ default:
     -backend-config="bucket=${TF_STATE_BUCKET}" \
     -backend-config="key=${TF_STATE_KEY}" \
     -backend-config="region=${AWS_DEFAULT_REGION}" \
-    -backend-config="dynamodb_table=${TF_STATE_LOCK_TABLE}" \
+    -backend-config="use_lockfile=true" \
     -backend-config="encrypt=true"
 
 .merge-request-or-default:

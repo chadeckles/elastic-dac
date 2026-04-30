@@ -1,28 +1,38 @@
 # =============================================================================
-# Terraform Backend — AWS S3 + DynamoDB locking
+# Terraform Backend — AWS S3 with native state locking
 # =============================================================================
 # Copy this file to backend.tf to enable remote state. Values are populated at
 # init time via `-backend-config` flags from the GitLab pipeline (see the
 # `.terraform-init` snippet in ../.gitlab-ci.yml), so you should NOT hard-code
 # the bucket name, key, or region here.
 #
-# Example:
+# Locking
+#   Uses S3 native state locking (Terraform >= 1.10, AWS provider >= 5.85).
+#   The lock lives as a small `<key>.tflock` object in the same bucket via S3
+#   conditional writes — no DynamoDB table required.
+#
+# Authentication
+#   The runner's EC2 instance role provides credentials automatically via
+#   IMDS. No AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY required.
+#
+# Example (run locally to migrate existing state once):
 #   cp backend.tf.example backend.tf
 #   terraform init \
-#     -backend-config="bucket=company-tfstate-prod" \
+#     -backend-config="bucket=elastic-UPDATEME" \
 #     -backend-config="key=elastic-dac/terraform.tfstate" \
 #     -backend-config="region=us-east-1" \
-#     -backend-config="dynamodb_table=terraform-locks" \
-#     -backend-config="encrypt=true"
+#     -backend-config="use_lockfile=true" \
+#     -backend-config="encrypt=true" \
+#     -migrate-state
 #
-# Provisioning the bucket + lock table is documented in:
+# Bucket provisioning is documented in:
 #   ../.gitlab/GITLAB_RUNNERS.md   §1
 # =============================================================================
 
 terraform {
   backend "s3" {
     # Intentionally empty — populated by `-backend-config` in CI.
-    # Local development can use a separate workspace or a backend override file
-    # (terraform init -backend-config=local.s3.tfbackend).
+    # Local development can pass the same flags via:
+    #   terraform init -reconfigure -backend-config=.local.s3.tfbackend
   }
 }

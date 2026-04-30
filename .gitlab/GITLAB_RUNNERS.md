@@ -3,11 +3,13 @@
 This project's CI/CD pipeline ([.gitlab-ci.yml](../.gitlab-ci.yml)) is designed to run on
 **dedicated, self-hosted GitLab Runners** with **AWS S3** for both:
 
-1. **Terraform remote state** (S3 bucket + DynamoDB lock table)
+1. **Terraform remote state** (S3 bucket; native S3 state locking — no DynamoDB)
 2. **GitLab distributed cache** (`.terraform/` plugin cache, plan artifacts)
 
-This document walks through provisioning both.
+Authentication uses the runner's **EC2 instance role**; no static AWS keys are
+plumbed through GitLab variables.
 
+This document walks through provisioning both.
 ---
 
 ## 1. AWS resources
@@ -16,34 +18,29 @@ This document walks through provisioning both.
 
 ```bash
 aws s3api create-bucket \
-  --bucket company-tfstate-prod \
+  --bucket elastic-UPDATEME \
   --region us-east-1
 aws s3api put-bucket-versioning \
-  --bucket company-tfstate-prod \
+  --bucket elastic-UPDATEME \
   --versioning-configuration Status=Enabled
 aws s3api put-bucket-encryption \
-  --bucket company-tfstate-prod \
+  --bucket elastic-UPDATEME \
   --server-side-encryption-configuration '{
     "Rules": [{ "ApplyServerSideEncryptionByDefault": { "SSEAlgorithm": "AES256" } }]
   }'
 aws s3api put-public-access-block \
-  --bucket company-tfstate-prod \
+  --bucket elastic-UPDATEME \
   --public-access-block-configuration \
   "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
 ```
 
-### 1b. DynamoDB table for state locking
+> **State locking:** Terraform 1.10+ supports native S3 state locking via S3
+> conditional writes (`use_lockfile = true`). The lock is a tiny
+> `<key>.tflock` object stored alongside your state file in the same bucket.
+> No DynamoDB table is required — the IAM perms in §1b cover both state
+> reads/writes and lock acquisition.
 
-```bash
-aws dynamodb create-table \
-  --table-name terraform-locks \
-  --attribute-definitions AttributeName=LockID,AttributeType=S \
-  --key-schema AttributeName=LockID,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST \
-  --region us-east-1
-```
-
-### 1c. (Optional) S3 bucket for runner distributed cache
+### 1b. (Optional) S3 bucket for runner distributed cache
 
 If you operate more than one runner instance and want the `.terraform/` plugin
 cache and pipeline artifacts to be reusable across runners, give them a
@@ -65,17 +62,18 @@ aws s3api put-bucket-lifecycle-configuration \
   }'
 ```
 
-### 1d. IAM policy for the runner
+### 1c. IAM policy for the runner
 
-Attach this policy to the runner's EC2 instance role (or an IAM user whose
-credentials are stored as masked GitLab CI/CD variables):
+Attach this policy to the runner's EC2 instance role. With S3 native locking
+the state and the lock object both live in the same bucket, so a single
+bucket grant covers both. No DynamoDB statements required.
 
 ```json
 {
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "TerraformState",
+      "Sid": "TerraformStateAndLock",
       "Effect": "Allow",
       "Action": [
         "s3:ListBucket",
@@ -84,20 +82,9 @@ credentials are stored as masked GitLab CI/CD variables):
         "s3:DeleteObject"
       ],
       "Resource": [
-        "arn:aws:s3:::company-tfstate-prod",
-        "arn:aws:s3:::company-tfstate-prod/*"
+        "arn:aws:s3:::elastic-UPDATEME",
+        "arn:aws:s3:::elastic-UPDATEME/*"
       ]
-    },
-    {
-      "Sid": "TerraformLocks",
-      "Effect": "Allow",
-      "Action": [
-        "dynamodb:GetItem",
-        "dynamodb:PutItem",
-        "dynamodb:DeleteItem",
-        "dynamodb:DescribeTable"
-      ],
-      "Resource": "arn:aws:dynamodb:us-east-1:*:table/terraform-locks"
     },
     {
       "Sid": "RunnerCache",
@@ -116,6 +103,11 @@ credentials are stored as masked GitLab CI/CD variables):
   ]
 }
 ```
+
+> The `s3:PutObject` + `s3:DeleteObject` on the state bucket are also what
+> Terraform uses to create and release the `<key>.tflock` lock object during
+> `plan` / `apply`. If you ever need to break a stale lock manually:
+> `aws s3 rm s3://elastic-UPDATEME/elastic-dac/terraform.tfstate.tflock`.
 
 ---
 
@@ -191,9 +183,9 @@ check_interval = 0
       AuthenticationType = "iam"   # uses the EC2 instance role
 ```
 
-If you can't use an instance role, use static credentials and switch to
-`AuthenticationType = "access-key"` with `AccessKey` / `SecretKey` set
-(or, preferably, mount them via a secrets manager).
+Using `AuthenticationType = "iam"` keeps everything off static keys — the
+same instance role that grants the runner access to the Terraform state
+bucket also covers the cache bucket (see the IAM policy in §1c).
 
 Then:
 
@@ -210,12 +202,9 @@ sudo systemctl restart gitlab-runner
 
 | Variable | Example | Masked | Protected |
 |---|---|---|---|
-| `AWS_ACCESS_KEY_ID` | `AKIA…` | ✅ | ✅ |
-| `AWS_SECRET_ACCESS_KEY` | `…` | ✅ | ✅ |
-| `AWS_DEFAULT_REGION` | `us-east-1` | ⬜ | ⬜ |
-| `TF_STATE_BUCKET` | `company-tfstate-prod` | ⬜ | ✅ |
+| `AWS_DEFAULT_REGION` | `us-east-1` | ⬜ | ✅ |
+| `TF_STATE_BUCKET` | `elastic-UPDATEME` | ⬜ | ✅ |
 | `TF_STATE_KEY` | `elastic-dac/terraform.tfstate` | ⬜ | ✅ |
-| `TF_STATE_LOCK_TABLE` | `terraform-locks` | ⬜ | ✅ |
 | `RUNNER_TAG` | `elastic-dac-prod` | ⬜ | ⬜ |
 | `ELASTICSEARCH_USERNAME` | `terraform` | ✅ | ✅ |
 | `ELASTICSEARCH_PASSWORD` | `…` | ✅ | ✅ |
@@ -226,9 +215,11 @@ sudo systemctl restart gitlab-runner
 | `GITLAB_TOKEN` | project access token (`api`,`write_repository`) | ✅ | ✅ |
 | `SYNC_UPSTREAM` | `true` *(set on the schedule, not project-wide)* | ⬜ | ⬜ |
 
-If you use AWS instance-role auth on the runner, you can omit
-`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` here and rely solely on the
-runner's IAM role.
+> **No AWS keys in GitLab.** AWS credentials come from the runner's EC2
+> instance role via IMDS — don't add `AWS_ACCESS_KEY_ID` or
+> `AWS_SECRET_ACCESS_KEY` to this project. If you ever need to run the
+> pipeline somewhere without an instance role (e.g. a non-AWS runner), add
+> them then — but for the supported topology they are not used.
 
 ---
 

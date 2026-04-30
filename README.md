@@ -596,12 +596,18 @@ and the runner's distributed cache.
 
 | Variable | Purpose |
 |---|---|
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_DEFAULT_REGION` | S3 state + cache (or use the runner's IAM role) |
-| `TF_STATE_BUCKET`, `TF_STATE_KEY`, `TF_STATE_LOCK_TABLE` | Remote state config |
+| `AWS_DEFAULT_REGION` | AWS region of the state bucket |
+| `TF_STATE_BUCKET` | S3 bucket holding the remote state (e.g. `elastic-UPDATEME`) |
+| `TF_STATE_KEY` | Object key for the state file (e.g. `elastic-dac/terraform.tfstate`) |
 | `RUNNER_TAG` | Tag on the dedicated runner (default `elastic-dac`) |
 | `ELASTICSEARCH_USERNAME` / `_PASSWORD` / `_ENDPOINTS` | Elastic creds |
 | `KIBANA_USERNAME` / `_PASSWORD` / `_ENDPOINT` | Kibana creds |
 | `GITLAB_TOKEN` | Project access token used by the upstream sync job to open MRs |
+
+> **AWS auth.** The runner's EC2 instance role provides credentials via IMDS;
+> we deliberately do **not** plumb `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
+> through GitLab. State locking is handled natively by S3
+> (`use_lockfile = true`) — no DynamoDB table is required.
 
 Full AWS provisioning, IAM policy, and runner registration are in
 [.gitlab/GITLAB_RUNNERS.md](.gitlab/GITLAB_RUNNERS.md). Local-dev backend

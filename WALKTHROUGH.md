@@ -406,8 +406,8 @@ baseline) is `make demo-reset`.
 | `Error: Module not installed` | New `module` block added without re-init | `cd terraform && terraform init` |
 | `409 Conflict` on apply after import | `terraform import` used `rule_id` instead of internal Kibana `id` | Re-import using the `id` printed in the .tf header |
 | Plan shows drift on tags after import | Framework folding in standard tags | Expected; apply once to converge |
-| `Could not lock state` | Another pipeline holding the DynamoDB lock | Wait for the conflicting `terraform:apply` job to finish, or release manually via `terraform force-unlock` |
-| `RequestError: 403` on `terraform plan` in CI | Runner missing AWS perms or pipeline lacks the protected variables | Verify the runner IAM role includes the policy in [.gitlab/GITLAB_RUNNERS.md §1d](.gitlab/GITLAB_RUNNERS.md#1d-iam-policy-for-the-runner) and the MR is on a protected branch |
+| `Could not lock state` | Another pipeline holds the S3 native lock (`<key>.tflock` object) | Wait for the conflicting `terraform:apply` job to finish, or release manually: `aws s3 rm s3://$TF_STATE_BUCKET/$TF_STATE_KEY.tflock` |
+| `RequestError: 403` on `terraform plan` in CI | Runner instance role missing S3 perms or pipeline lacks the protected variables | Verify the runner IAM role includes the policy in [.gitlab/GITLAB_RUNNERS.md §1c](.gitlab/GITLAB_RUNNERS.md#1c-iam-policy-for-the-runner) and the MR is on a protected branch |
 | Local apply uses local state but CI uses S3 | Backend partial-config not provided locally | Use `terraform init -reconfigure -backend-config=local.s3.tfbackend`, or develop without `backend.tf` and only enable it in CI |
 | Rule not visible in Kibana after apply | Wrong space, or `var.kibana_space_id` mismatch | Confirm `kibana_space_id` matches the space you're viewing |
 
