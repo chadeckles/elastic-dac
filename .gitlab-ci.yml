@@ -17,10 +17,10 @@
 #
 # Required CI/CD variables (Settings → CI/CD → Variables)
 #   AWS_DEFAULT_REGION           e.g. us-east-1
-#   TF_STATE_BUCKET              e.g. elastic-UPDATEME
+#   TF_STATE_BUCKET              e.g. elastic-dac-terraform
 #   TF_STATE_KEY                 e.g. elastic-dac/terraform.tfstate
-#   ELASTICSEARCH_USERNAME / _PASSWORD / _ENDPOINTS
-#   KIBANA_USERNAME / _PASSWORD / _ENDPOINT
+#   KIBANA_API_KEY               encoded API key (provider auth)
+#   KIBANA_ENDPOINT              live Kibana URL (browser address bar)
 #
 # Runner selection
 #   Jobs use `tags: [$RUNNER_TAG]` so dedicated runners pick them up.

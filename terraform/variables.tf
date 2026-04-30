@@ -2,51 +2,35 @@
 # Root Variables
 # =============================================================================
 
-# ---- Elasticsearch ----------------------------------------------------------
-variable "elasticsearch_username" {
-  description = "Username for Elasticsearch authentication."
-  type        = string
-  default     = "elastic"
-}
-
-variable "elasticsearch_password" {
-  description = "Password for Elasticsearch authentication."
-  type        = string
-  sensitive   = true
-  default     = "changeme"
-}
-
-variable "elasticsearch_endpoints" {
-  description = "List of Elasticsearch endpoints (include scheme and port)."
-  type        = list(string)
-  default     = ["http://localhost:9200"]
-}
-
 # ---- Kibana -----------------------------------------------------------------
-variable "kibana_username" {
-  description = "Username for Kibana authentication."
-  type        = string
-  default     = "elastic"
-}
-
-variable "kibana_password" {
-  description = "Password for Kibana authentication."
+variable "kibana_api_key" {
+  description = <<-EOT
+    Base64-encoded Kibana API key (the "encoded" field returned by
+    POST /_security/api_key, or the "Encoded" value shown in Kibana → Stack
+    Management → API Keys). Leave null to fall back to the KIBANA_API_KEY
+    environment variable, which the elasticstack provider also honours
+    automatically.
+  EOT
   type        = string
   sensitive   = true
-  default     = "changeme"
+  default     = null
 }
 
 variable "kibana_endpoint" {
-  description = "Kibana endpoint (include scheme and port)."
+  description = <<-EOT
+    Kibana endpoint (include scheme and port). On Elastic Cloud this is the
+    URL in your browser address bar when on Stack Management. Falls back to
+    KIBANA_ENDPOINT env var.
+  EOT
   type        = string
-  default     = "http://localhost:5601"
+  default     = null
 }
 
 # ---- General ----------------------------------------------------------------
 variable "kibana_space_id" {
-  description = "Kibana space in which to deploy detection rules."
+  description = "Kibana space in which to deploy detection rules. Defaults to 'dac', the staging space for Detection-as-Code managed content."
   type        = string
-  default     = "default"
+  default     = "dac"
 }
 
 variable "environment" {

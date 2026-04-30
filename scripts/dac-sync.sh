@@ -14,6 +14,10 @@
 #   ./scripts/dac-sync.sh import [--space <space>]  # Import rules to Kibana
 #   ./scripts/dac-sync.sh setup-custom               # Set up custom rules dir
 #
+# Required environment variables:
+#   KIBANA_ENDPOINT    Live Kibana URL
+#   KIBANA_API_KEY     Encoded API key ("encoded" field from POST /_security/api_key)
+#
 # Reference:
 #   https://www.elastic.co/security-labs/detection-as-code-timeline-and-new-features
 #   https://dac-reference.readthedocs.io/en/latest/
@@ -36,17 +40,15 @@ ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
-# Source env for Kibana credentials
-if [[ -f "${ROOT_DIR}/.env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "${ROOT_DIR}/.env"
-  set +a
-fi
+KIBANA_URL="${KIBANA_ENDPOINT:-}"
+KIBANA_API_KEY="${KIBANA_API_KEY:-}"
 
-KIBANA_URL="${KIBANA_ENDPOINT:-http://localhost:5601}"
-KIBANA_USER="${KIBANA_USERNAME:-elastic}"
-KIBANA_PASS="${KIBANA_PASSWORD:-changeme}"
+if [[ -z "$KIBANA_URL" || -z "$KIBANA_API_KEY" ]]; then
+  err "KIBANA_ENDPOINT and KIBANA_API_KEY must be set."
+  echo "  export KIBANA_ENDPOINT='https://<deployment>.kb.<region>.aws.elastic-cloud.com:9243'"
+  echo "  export KIBANA_API_KEY='<encoded value>'"
+  exit 1
+fi
 
 # Verify detection-rules is installed
 check_dr_installed() {
@@ -72,8 +74,7 @@ cmd_export() {
   info "Exporting custom rules from Kibana (space: ${space}) …"
   python -m detection_rules kibana \
     --kibana-url "${KIBANA_URL}" \
-    --kibana-user "${KIBANA_USER}" \
-    --kibana-password "${KIBANA_PASS}" \
+    --api-key "${KIBANA_API_KEY}" \
     --space "${space}" \
     export-rules \
     -d "${CUSTOM_RULES_DIR}/rules/" \
@@ -101,8 +102,7 @@ cmd_import() {
   info "Importing rules to Kibana (space: ${space}) …"
   python -m detection_rules kibana \
     --kibana-url "${KIBANA_URL}" \
-    --kibana-user "${KIBANA_USER}" \
-    --kibana-password "${KIBANA_PASS}" \
+    --api-key "${KIBANA_API_KEY}" \
     --space "${space}" \
     import-rules \
     -d "${CUSTOM_RULES_DIR}/rules/" \
@@ -134,10 +134,9 @@ usage() {
   echo "  import [--space <name>]    Import local rules to Kibana"
   echo "  setup-custom               Initialise a custom rules directory"
   echo ""
-  echo "Environment variables (or .env file):"
-  echo "  KIBANA_ENDPOINT            Kibana URL (default: http://localhost:5601)"
-  echo "  KIBANA_USERNAME            Kibana user (default: elastic)"
-  echo "  KIBANA_PASSWORD            Kibana password (default: changeme)"
+  echo "Environment variables:"
+  echo "  KIBANA_ENDPOINT            Kibana URL (required)"
+  echo "  KIBANA_API_KEY             Encoded API key (required)"
 }
 
 # ---- Main --------------------------------------------------------------------

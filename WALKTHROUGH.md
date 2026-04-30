@@ -10,12 +10,14 @@
 >
 > **Prerequisites.**
 >
-> - Local Elastic Stack running (`make setup`) **or** access to a remote
->   cluster with the credentials wired into [.env](.env) /
->   [terraform/terraform.tfvars](terraform/terraform.tfvars).
-> - Terraform initialized at least once (`make init`).
+> - Live Kibana cluster reachable from your machine.
+> - An encoded Kibana API key with Security: All privileges, exported as
+>   `KIBANA_API_KEY`.
+> - `KIBANA_ENDPOINT` exported (the URL in your Kibana browser tab).
+> - Run `make creds-check` once to confirm connectivity.
+> - Terraform >= 1.10 (for S3 native state locking) initialised against the
+>   shared S3 backend (see [.gitlab/GITLAB_RUNNERS.md](.gitlab/GITLAB_RUNNERS.md)).
 > - Familiarity with Git branching and merge requests.
-
 ---
 
 ## Table of contents
@@ -55,9 +57,8 @@ elastic-dac/
 │   ├── custom_rules/                    # One .tf per detection rule
 │   ├── exceptions/                      # One .tf per shared exception list
 │   └── rule_exceptions/                 # One .tf per rule-scoped tuning bundle
-├── scripts/                             # Wizards, importer, sync, validate
-├── tests/                               # pytest validation suite
-├── docker-compose.yml                   # Optional local Elastic stack
+├── scripts/                              # Wizards, importer, sync
+├── tests/                                # pytest validation suite
 └── Makefile                             # Task shortcuts
 ```
 
@@ -387,15 +388,23 @@ make sync-upstream-full       # first-time baseline catalog
 
 ## 12. Local environment lifecycle
 
+No local Elastic stack is bundled — development runs against the live cluster
+or a personal sandbox deployment. The minimum loop is:
+
 ```bash
-make setup           # docker compose up + passwords + terraform init
-make validate-lab    # health check ES + Kibana + rules
-make plan / apply
-make teardown        # destroy terraform resources + bring docker down
+# One-time per shell session
+export KIBANA_ENDPOINT=https://<deployment>.kb.<region>.aws.elastic-cloud.com:9243
+export KIBANA_API_KEY=<encoded>
+
+make creds-check     # confirm env + cluster reachable
+make plan            # preview
+make apply           # deploy
+make destroy         # tear down (⚠️ destructive)
 ```
 
-A faster reset between practice runs (reverts uncommitted changes, redeploys
-baseline) is `make demo-reset`.
+If you want a throwaway sandbox, spin up a small Elastic Cloud deployment,
+mint an API key for it, and point your env vars there. CI continues to use
+the production deployment via the protected GitLab variables.
 
 ---
 
@@ -417,8 +426,7 @@ baseline) is `make demo-reset`.
 
 | Task | Command |
 |---|---|
-| Bootstrap local stack | `make setup` |
-| Health check | `make validate-lab` |
+| Verify cluster reachability | `make creds-check` |
 | Create a rule (wizard) | `make new-rule` |
 | Create a shared exception list (wizard) | `make new-exception` |
 | List rules in Kibana | `make list-rules` |
@@ -426,5 +434,5 @@ baseline) is `make demo-reset`.
 | Run unit tests | `make test` |
 | Preview changes | `make plan` |
 | Deploy locally | `make apply` |
-| Tear down | `make teardown` |
+| Tear down (⚠️ destructive) | `make destroy` |
 | Print cheatsheet | `make cheatsheet` |

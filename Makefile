@@ -1,15 +1,24 @@
 # =============================================================================
 # Makefile — Detection as Code (Elastic Stack)
 # =============================================================================
-# Shortcuts for common development and deployment tasks.
+# Shortcuts for common development and deployment tasks against a LIVE
+# Elasticsearch / Kibana cluster. Authentication is API-key based and read
+# from the environment.
+#
+# Required env vars for any target that talks to the cluster
+# (`plan`, `apply`, `destroy`, `import-rule`, `list-rules`, `dac-*`):
+#
+#   ELASTICSEARCH_ENDPOINTS   https://<deployment>.es.<region>.aws.elastic-cloud.com:9243
+#   ELASTICSEARCH_API_KEY     <encoded API key>
+#   KIBANA_ENDPOINT           https://<deployment>.kb.<region>.aws.elastic-cloud.com:9243
+#   KIBANA_API_KEY            <same encoded API key, typically>
 #
 # Usage:
-#   make help        — Show all available targets
-#   make setup       — Bootstrap the full lab (Docker + Terraform)
-#   make plan        — Run terraform plan
-#   make apply       — Run terraform apply
-#   make test        — Run pytest rule unit tests
-#   make teardown    — Destroy everything
+#   make help          — Show all available targets
+#   make creds-check   — Verify env vars + reach the cluster
+#   make plan          — terraform plan
+#   make apply         — terraform apply
+#   make test          — pytest rule unit tests
 # =============================================================================
 
 .DEFAULT_GOAL := help
@@ -20,36 +29,18 @@ TESTS_DIR     := tests
 SCRIPTS_DIR   := scripts
 
 # ---------------------------------------------------------------------------
-# Docker
+# Cluster connectivity check
 # ---------------------------------------------------------------------------
-.PHONY: docker-up
-docker-up: ## Start the Elastic Stack (Elasticsearch + Kibana)
-	docker compose up -d
-
-.PHONY: docker-down
-docker-down: ## Stop the Elastic Stack
-	docker compose down
-
-.PHONY: docker-destroy
-docker-destroy: ## Stop the Elastic Stack and remove volumes
-	docker compose down -v
-
-.PHONY: docker-logs
-docker-logs: ## Follow Docker Compose logs
-	docker compose logs -f
-
-# ---------------------------------------------------------------------------
-# Setup / Teardown
-# ---------------------------------------------------------------------------
-.PHONY: setup
-setup: ## Full lab bootstrap: Docker + passwords + Terraform init
-	@chmod +x $(SCRIPTS_DIR)/setup.sh
-	$(SCRIPTS_DIR)/setup.sh
-
-.PHONY: teardown
-teardown: ## Destroy Terraform resources and Docker stack
-	@chmod +x $(SCRIPTS_DIR)/teardown.sh
-	$(SCRIPTS_DIR)/teardown.sh
+.PHONY: creds-check
+creds-check: ## 🔌 Verify env vars are set and the live Kibana is reachable
+	@if [[ -z "$$KIBANA_ENDPOINT" ]]; then echo "✗ KIBANA_ENDPOINT not set"; exit 1; fi
+	@if [[ -z "$$KIBANA_API_KEY"  ]]; then echo "✗ KIBANA_API_KEY not set";  exit 1; fi
+	@echo "→ Pinging Kibana at $$KIBANA_ENDPOINT …"
+	@curl --silent --show-error --fail \
+		-H "Authorization: ApiKey $$KIBANA_API_KEY" \
+		-H 'kbn-xsrf: true' \
+		"$$KIBANA_ENDPOINT/api/status" \
+		| python3 -c "import sys,json; d=json.load(sys.stdin); print('  ✓ Kibana', d.get('version',{}).get('number','?'), 'available')"
 
 # ---------------------------------------------------------------------------
 # Terraform
@@ -75,7 +66,7 @@ apply: ## Run terraform apply (auto-approve)
 	cd $(TF_DIR) && terraform init -input=false >/dev/null 2>&1 && terraform apply -auto-approve -input=false
 
 .PHONY: destroy
-destroy: ## Run terraform destroy (auto-approve)
+destroy: ## Run terraform destroy (auto-approve)  ⚠️ destructive against the live cluster
 	cd $(TF_DIR) && terraform destroy -auto-approve -input=false
 
 .PHONY: output
@@ -99,7 +90,7 @@ new-exception: ## 🧙 Interactive wizard to create a new exception list
 # Import from Kibana GUI
 # ---------------------------------------------------------------------------
 .PHONY: list-rules
-list-rules: ## 📋 List all detection rules currently in Kibana
+list-rules: ## 📋 List all detection rules currently in the live Kibana
 	@python3 $(SCRIPTS_DIR)/import_gui_rule.py --list
 
 .PHONY: import-rule
@@ -114,6 +105,11 @@ cheatsheet: ## 📋 Print a quick-reference cheatsheet to the terminal
 	@echo "  ╚═══════════════════════════════════════════════════════════════╝"
 	@echo ""
 	@echo "  ┌─────────────────────────────────────────────────────────────┐"
+	@echo "  │  ENVIRONMENT (live cluster)                                │"
+	@echo "  │    export KIBANA_ENDPOINT=https://...:9243                 │"
+	@echo "  │    export KIBANA_API_KEY=<encoded>                         │"
+	@echo "  │    make creds-check     Verify cluster reachable           │"
+	@echo "  ├─────────────────────────────────────────────────────────────┤"
 	@echo "  │  CREATE                                                    │"
 	@echo "  │    make new-rule         Create a new detection rule       │"
 	@echo "  │    make new-exception    Create a new exception list       │"
@@ -127,17 +123,12 @@ cheatsheet: ## 📋 Print a quick-reference cheatsheet to the terminal
 	@echo "  │    make plan             Preview what Terraform will do    │"
 	@echo "  │    make apply            Deploy rules to Elastic Security  │"
 	@echo "  ├─────────────────────────────────────────────────────────────┤"
-	@echo "  │  ENVIRONMENT                                               │"
-	@echo "  │    make setup            Start Docker + initialise TF      │"
-	@echo "  │    make teardown         Destroy everything                │"
-	@echo "  │    make validate-lab     Check Elastic Stack health        │"
-	@echo "  ├─────────────────────────────────────────────────────────────┤"
 	@echo "  │  WORKFLOW                                                  │"
 	@echo "  │    1. make new-rule      (answer prompts)                  │"
 	@echo "  │    2. make test          (must pass before push)           │"
 	@echo "  │    3. git add + commit + push                              │"
-	@echo "  │    4. Open PR → CI runs tests + plan → review → merge     │"
-	@echo "  │    5. Merge → auto-deploys to Elastic Security             │"
+	@echo "  │    4. Open MR → CI runs tests + plan → review → merge     │"
+	@echo "  │    5. Merge → CI applies to Elastic Security               │"
 	@echo "  └─────────────────────────────────────────────────────────────┘"
 	@echo ""
 
@@ -153,14 +144,6 @@ test: ## Run pytest rule unit tests
 test-verbose: ## Run pytest with full output
 	python3 -m pip install -q -r $(TESTS_DIR)/requirements.txt
 	python3 -m pytest -v --tb=long
-
-# ---------------------------------------------------------------------------
-# Validation
-# ---------------------------------------------------------------------------
-.PHONY: validate-lab
-validate-lab: ## Run lab validation checks (ES + Kibana + rules + exceptions)
-	@chmod +x $(SCRIPTS_DIR)/validate.sh
-	$(SCRIPTS_DIR)/validate.sh
 
 # ---------------------------------------------------------------------------
 # Upstream Sync
@@ -200,14 +183,6 @@ dac-setup: ## Initialise custom rules directory for detection-rules CLI
 # ---------------------------------------------------------------------------
 .PHONY: ci
 ci: fmt validate test plan ## Run full CI pipeline locally: fmt → validate → test → plan
-
-# ---------------------------------------------------------------------------
-# Demo
-# ---------------------------------------------------------------------------
-.PHONY: demo-reset
-demo-reset: ## 🔄 Reset environment between demo runs (reverts files, redeploys baseline)
-	@chmod +x $(SCRIPTS_DIR)/demo_cleanup.sh
-	@$(SCRIPTS_DIR)/demo_cleanup.sh
 
 # ---------------------------------------------------------------------------
 # Help

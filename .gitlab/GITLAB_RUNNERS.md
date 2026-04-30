@@ -16,20 +16,25 @@ This document walks through provisioning both.
 
 ### 1a. S3 bucket for Terraform state
 
+> **Bucket name used in this guide:** `elastic-dac-terraform` — the bucket that
+> backs this project's remote state. Substitute your own name if you've chosen
+> something different, and keep it consistent across §1a, §1c, the GitLab
+> `TF_STATE_BUCKET` variable, and `terraform/backend.tf.example`.
+
 ```bash
 aws s3api create-bucket \
-  --bucket elastic-UPDATEME \
+  --bucket elastic-dac-terraform \
   --region us-east-1
 aws s3api put-bucket-versioning \
-  --bucket elastic-UPDATEME \
+  --bucket elastic-dac-terraform \
   --versioning-configuration Status=Enabled
 aws s3api put-bucket-encryption \
-  --bucket elastic-UPDATEME \
+  --bucket elastic-dac-terraform \
   --server-side-encryption-configuration '{
     "Rules": [{ "ApplyServerSideEncryptionByDefault": { "SSEAlgorithm": "AES256" } }]
   }'
 aws s3api put-public-access-block \
-  --bucket elastic-UPDATEME \
+  --bucket elastic-dac-terraform \
   --public-access-block-configuration \
   "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
 ```
@@ -82,8 +87,8 @@ bucket grant covers both. No DynamoDB statements required.
         "s3:DeleteObject"
       ],
       "Resource": [
-        "arn:aws:s3:::elastic-UPDATEME",
-        "arn:aws:s3:::elastic-UPDATEME/*"
+        "arn:aws:s3:::elastic-dac-terraform",
+        "arn:aws:s3:::elastic-dac-terraform/*"
       ]
     },
     {
@@ -107,7 +112,7 @@ bucket grant covers both. No DynamoDB statements required.
 > The `s3:PutObject` + `s3:DeleteObject` on the state bucket are also what
 > Terraform uses to create and release the `<key>.tflock` lock object during
 > `plan` / `apply`. If you ever need to break a stale lock manually:
-> `aws s3 rm s3://elastic-UPDATEME/elastic-dac/terraform.tfstate.tflock`.
+> `aws s3 rm s3://elastic-dac-terraform/elastic-dac/terraform.tfstate.tflock`.
 
 ---
 
@@ -203,15 +208,11 @@ sudo systemctl restart gitlab-runner
 | Variable | Example | Masked | Protected |
 |---|---|---|---|
 | `AWS_DEFAULT_REGION` | `us-east-1` | ⬜ | ✅ |
-| `TF_STATE_BUCKET` | `elastic-UPDATEME` | ⬜ | ✅ |
+| `TF_STATE_BUCKET` | `elastic-dac-terraform` | ⬜ | ✅ |
 | `TF_STATE_KEY` | `elastic-dac/terraform.tfstate` | ⬜ | ✅ |
 | `RUNNER_TAG` | `elastic-dac-prod` | ⬜ | ⬜ |
-| `ELASTICSEARCH_USERNAME` | `terraform` | ✅ | ✅ |
-| `ELASTICSEARCH_PASSWORD` | `…` | ✅ | ✅ |
-| `ELASTICSEARCH_ENDPOINTS` | `https://es.example.com:9243` | ⬜ | ✅ |
-| `KIBANA_USERNAME` | `terraform` | ✅ | ✅ |
-| `KIBANA_PASSWORD` | `…` | ✅ | ✅ |
-| `KIBANA_ENDPOINT` | `https://kb.example.com:9243` | ⬜ | ✅ |
+| `KIBANA_API_KEY` | `VnVhQ2ZH…` *(the `encoded` field from POST /_security/api_key)* | ✅ | ✅ |
+| `KIBANA_ENDPOINT` | `https://<deployment>.kb.<region>.aws.elastic-cloud.com:9243` | ⬜ | ✅ |
 | `GITLAB_TOKEN` | project access token (`api`,`write_repository`) | ✅ | ✅ |
 | `SYNC_UPSTREAM` | `true` *(set on the schedule, not project-wide)* | ⬜ | ⬜ |
 

@@ -143,10 +143,12 @@ elastic-dac/
 │   ├── exceptions/              # One .tf file per shared exception list
 │   └── rule_exceptions/         # One .tf file per rule-scoped tuning bundle
 ├── tests/                       # Pytest unit tests
-├── scripts/                     # Setup, teardown, sync, wizards, import
+├── scripts/                     # Wizards, importer, sync helpers
 │   ├── import_gui_rule.py       # Import a Kibana GUI rule into Terraform
-│   └── demo_cleanup.sh          # Reset environment between practice runs
-├── docker-compose.yml           # Local dev stack (optional)
+│   ├── new_rule.sh              # Interactive wizard — new detection rule
+│   ├── new_exception.sh         # Interactive wizard — new exception list
+│   ├── sync_upstream_rules.py   # Diff against elastic/detection-rules
+│   └── dac-sync.sh              # detection-rules CLI integration (optional)
 ├── Makefile                     # Shortcut targets
 ├── WALKTHROUGH.md               # Practitioner how-to guide
 └── README.md
@@ -162,68 +164,85 @@ add a new one, or use the interactive wizards (`make new-rule` / `make new-excep
 
 | Tool | Version | Purpose |
 |---|---|---|
-| [Terraform](https://developer.hashicorp.com/terraform/downloads) | ≥ 1.5 | Infrastructure as Code engine |
-| [Python](https://www.python.org/) | ≥ 3.9 | Run unit tests |
+| [Terraform](https://developer.hashicorp.com/terraform/downloads) | ≥ 1.10 | Infrastructure as Code engine (1.10 enables S3 native state locking) |
+| [Python](https://www.python.org/) | ≥ 3.9 | Run unit tests + helper scripts |
 | [Make](https://www.gnu.org/software/make/) | any | Task runner (optional) |
 
-You'll also need network access to an **Elasticsearch** and **Kibana** instance
-(cloud, on-prem, or local Docker).
+You also need:
+
+- **Live Elasticsearch + Kibana** (Elastic Cloud, on-prem, or self-managed) reachable from your machine and from the GitLab runner.
+- **An API key** generated in Kibana → **Stack Management → API Keys**. Use the `encoded` value the API/UI returns. The key needs Kibana **Security: All** privileges (or equivalent role descriptors) to manage detection rules and exception items.
+- For CI deploys: a GitLab project with the dedicated runner + AWS S3 backend wired up per [.gitlab/GITLAB_RUNNERS.md](.gitlab/GITLAB_RUNNERS.md).
 
 ---
 
 ## Getting Started
 
-### 1. Clone and configure
+### 1. Clone
 
 ```bash
-git clone <your-repo-url> elastic
-cd elastic
-cp .env.example .env          # Review and adjust credentials
+git clone <your-repo-url> elastic-dac
+cd elastic-dac
 ```
 
-### 2. Initialise Terraform
+### 2. Point Terraform at your live cluster
+
+Export the two env vars the elasticstack provider reads automatically:
 
 ```bash
-# Point to your Elastic cluster (edit .env or terraform.tfvars)
+export KIBANA_ENDPOINT="https://<deployment>.kb.<region>.aws.elastic-cloud.com:9243"
+export KIBANA_API_KEY="<encoded API key>"
+```
+
+> **Where do I find these?** `KIBANA_ENDPOINT` is the URL in your browser's
+> address bar when logged into Kibana (drop everything after the port).
+> `KIBANA_API_KEY` is the `encoded` field returned when you create an API
+> key in **Stack Management → API keys**.
+
+Verify connectivity before doing anything else:
+
+```bash
+make creds-check
+# → ✓ Kibana 8.17.4 available
+# → ✓ Elasticsearch authenticated as <user> roles=[...]
+```
+
+### 3. Initialise Terraform
+
+Once the [S3 backend](terraform/backend.tf.example) is enabled, init pulls the
+remote state down. Pass the same `-backend-config` flags the pipeline uses
+(see [.gitlab-ci.yml](.gitlab-ci.yml) `.terraform-init` snippet) or store them in a local
+backend file.
+
+```bash
 cd terraform
-terraform init
+cp backend.tf.example backend.tf       # one-time
+terraform init \
+  -backend-config="bucket=$TF_STATE_BUCKET" \
+  -backend-config="key=$TF_STATE_KEY" \
+  -backend-config="region=$AWS_DEFAULT_REGION" \
+  -backend-config="use_lockfile=true" \
+  -backend-config="encrypt=true"
+cd ..
 ```
 
-### 3. Run unit tests
+### 4. Run unit tests
 
 ```bash
 make test
 ```
 
-### 4. Preview and deploy
+### 5. Preview and deploy
 
 ```bash
-make plan                     # Review what will change
-make apply                    # Deploy rules + exceptions
+make plan        # Review what will change
+make apply       # Deploy rules + exceptions to Elastic
 ```
 
-### 5. Verify in Kibana
+### 6. Verify in Kibana
 
-Navigate to your Kibana instance → **Security** → **Rules** to see deployed
-detection rules and exceptions.
-
-<details>
-<summary><strong>🐳 Local Demo with Docker</strong> (click to expand)</summary>
-
-A `docker-compose.yml` is included for standing up a local single-node
-Elasticsearch + Kibana stack for testing purposes.
-
-```bash
-make setup                    # Starts Docker stack + terraform init
-make validate-lab             # Health check ES, Kibana, rules
-make teardown                 # Destroy everything when done
-```
-
-Default credentials: `elastic` / `changeme` (see `.env.example`).
-
-Kibana will be available at http://localhost:5601.
-
-</details>
+Open your Kibana → **Security → Rules** to see deployed detection rules and
+**Security → Rules → Shared Exception Lists** for shared exceptions.
 
 ---
 
@@ -597,11 +616,11 @@ and the runner's distributed cache.
 | Variable | Purpose |
 |---|---|
 | `AWS_DEFAULT_REGION` | AWS region of the state bucket |
-| `TF_STATE_BUCKET` | S3 bucket holding the remote state (e.g. `elastic-UPDATEME`) |
+| `TF_STATE_BUCKET` | S3 bucket holding the remote state (e.g. `elastic-dac-terraform`) |
 | `TF_STATE_KEY` | Object key for the state file (e.g. `elastic-dac/terraform.tfstate`) |
 | `RUNNER_TAG` | Tag on the dedicated runner (default `elastic-dac`) |
-| `ELASTICSEARCH_USERNAME` / `_PASSWORD` / `_ENDPOINTS` | Elastic creds |
-| `KIBANA_USERNAME` / `_PASSWORD` / `_ENDPOINT` | Kibana creds |
+| `KIBANA_API_KEY` | Encoded API key (the `encoded` field returned by POST /_security/api_key) |
+| `KIBANA_ENDPOINT` | Live Kibana URL (the value in your browser address bar; include scheme + port) |
 | `GITLAB_TOKEN` | Project access token used by the upstream sync job to open MRs |
 
 > **AWS auth.** The runner's EC2 instance role provides credentials via IMDS;
@@ -671,28 +690,22 @@ massive changelog. Subsequent runs only report changes since that baseline.
 
 | Target | Description |
 |---|---|
-| `make setup` | Full lab bootstrap (Docker + Terraform init) |
-| `make teardown` | Destroy everything |
+| `make creds-check` | 🔌 Verify env vars + reach the live cluster |
 | `make plan` | Terraform plan |
 | `make apply` | Terraform apply |
-| `make destroy` | Terraform destroy |
+| `make destroy` | Terraform destroy (⚠️ destructive against the live cluster) |
 | `make test` | Run pytest unit tests |
 | `make test-verbose` | Tests with full output |
-| `make validate-lab` | Health check (ES, Kibana, rules, exceptions) |
 | `make ci` | Full CI pipeline locally (fmt → validate → test → plan) |
 | `make fmt` | Format Terraform files |
 | `make new-rule` | 🧙 Interactive wizard — create a new detection rule |
 | `make new-exception` | 🧙 Interactive wizard — create a new exception list |
 | `make list-rules` | List all detection rules in Kibana |
 | `make import-rule` | Import a GUI-created rule into Terraform |
-| `make demo-reset` | Reset environment between demo practice runs |
 | `make cheatsheet` | 📋 Print quick-reference card to terminal |
 | `make sync-upstream` | Sync from elastic/detection-rules |
 | `make sync-upstream-dry` | Dry-run sync (no tracking update) |
 | `make sync-upstream-full` | First-time full catalog sync |
-| `make docker-up` | Start local Docker stack |
-| `make docker-down` | Stop local Docker stack |
-| `make docker-logs` | Follow Docker logs |
 | `make dac-export` | Export rules via detection-rules CLI |
 | `make dac-import` | Import rules via detection-rules CLI |
 

@@ -37,22 +37,21 @@ terraform {
 # =============================================================================
 # Provider Configuration
 # =============================================================================
-# Credentials come from variables (CI/CD) or from a .env / terraform.tfvars
-# file for local development.  The provider also honours environment variables
-# ELASTICSEARCH_USERNAME, ELASTICSEARCH_PASSWORD, ELASTICSEARCH_ENDPOINTS,
-# KIBANA_USERNAME, KIBANA_PASSWORD, KIBANA_ENDPOINT.
+# Authentication is API-key only and Kibana-only — every resource this repo
+# manages (detection rules, exception lists, exception items, prebuilt-rule
+# install) is a Kibana resource, so we don't configure the elasticsearch{}
+# block. If you ever add an Elasticsearch resource (index template, ILM
+# policy, transform, etc.) re-introduce the block + ELASTICSEARCH_API_KEY /
+# ELASTICSEARCH_ENDPOINTS env vars.
+#
+# Credentials come from GitLab CI/CD variables (KIBANA_API_KEY,
+# KIBANA_ENDPOINT) which the elasticstack provider reads automatically as
+# env vars.
 # =============================================================================
 provider "elasticstack" {
-  elasticsearch {
-    username  = var.elasticsearch_username
-    password  = var.elasticsearch_password
-    endpoints = var.elasticsearch_endpoints
-  }
-
   kibana {
-    username  = var.kibana_username
-    password  = var.kibana_password
-    endpoints = [var.kibana_endpoint]
+    api_key   = var.kibana_api_key
+    endpoints = var.kibana_endpoint != null ? [var.kibana_endpoint] : null
   }
 }
 

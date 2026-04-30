@@ -12,10 +12,11 @@
 # Generates a .tf file in terraform/custom_rules/ that you review, adjust,
 # register in outputs.tf, and then `terraform import` into state.
 #
-# Environment / .env:
-#   KIBANA_ENDPOINT    (default: http://localhost:5601)
-#   KIBANA_USERNAME    (default: elastic)
-#   KIBANA_PASSWORD    (default: changeme)
+# Required environment variables:
+#   KIBANA_ENDPOINT    Live Kibana URL (https://...kb...:9243)
+#   KIBANA_API_KEY     Encoded API key (the "encoded" field returned by
+#                      POST /_security/api_key, or shown in Kibana → Stack
+#                      Management → API Keys)
 # =============================================================================
 
 import argparse
@@ -25,7 +26,6 @@ import re
 import sys
 import urllib.request
 import urllib.error
-from base64 import b64encode
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -36,10 +36,17 @@ CUSTOM_RULES_DIR = PROJECT_ROOT / "terraform" / "custom_rules"
 # ---------------------------------------------------------------------------
 # Kibana API
 # ---------------------------------------------------------------------------
-def _auth(user: str, pwd: str) -> str:
-    return f"Basic {b64encode(f'{user}:{pwd}'.encode()).decode()}"
-
-
+def _auth_header() -> str:
+    api_key = os.environ.get("KIBANA_API_KEY")
+    if not api_key:
+        print(
+            "  ✗ KIBANA_API_KEY is not set.\n"
+            "     Generate one in Kibana → Stack Management → API Keys and export it:\n"
+            "       export KIBANA_API_KEY=<encoded value>",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return f"ApiKey {api_key}"
 def _get(url: str, auth: str) -> dict:
     req = urllib.request.Request(url, headers={
         "Authorization": auth, "kbn-xsrf": "true",
@@ -238,9 +245,11 @@ def main():
     p.add_argument("--kibana-url", default=None)
     args = p.parse_args()
 
-    kb = (args.kibana_url or os.environ.get("KIBANA_ENDPOINT", "http://localhost:5601")).rstrip("/")
-    auth = _auth(os.environ.get("KIBANA_USERNAME", "elastic"),
-                 os.environ.get("KIBANA_PASSWORD", "changeme"))
+    kb_default = os.environ.get("KIBANA_ENDPOINT")
+    if not (args.kibana_url or kb_default):
+        p.error("KIBANA_ENDPOINT is not set. Pass --kibana-url or export KIBANA_ENDPOINT.")
+    kb = (args.kibana_url or kb_default).rstrip("/")
+    auth = _auth_header()
 
     # --- List ---
     if args.list:

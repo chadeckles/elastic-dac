@@ -1,16 +1,19 @@
 # =============================================================================
 # Example tfvars — copy to terraform.tfvars and customise
 # =============================================================================
+# Authentication is API-key only and Kibana-only. Generate via:
+#   POST /_security/api_key  (or Kibana → Stack Management → API Keys)
+# and use the "encoded" field below.
+#
+# In CI these come from GitLab variables (KIBANA_API_KEY, KIBANA_ENDPOINT);
+# local devs typically prefer to export them as env vars rather than commit
+# them to a tfvars file. *.tfvars is gitignored — don't change that.
+# =============================================================================
 
-elasticsearch_username  = "elastic"
-elasticsearch_password  = "changeme"
-elasticsearch_endpoints = ["http://localhost:9200"]
+# kibana_api_key  = "VnVhQ2ZH…"           # the "encoded" value
+# kibana_endpoint = "https://<deployment>.kb.<region>.aws.elastic-cloud.com:9243"
 
-kibana_username = "elastic"
-kibana_password = "changeme"
-kibana_endpoint = "http://localhost:5601"
-
-kibana_space_id = "default"
+kibana_space_id = "dac"
 environment     = "dev"
 
 install_prebuilt_rules = true
