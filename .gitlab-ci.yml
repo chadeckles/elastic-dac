@@ -61,7 +61,13 @@ variables:
 # S3-backed cache. The cache key is per-branch so MRs don't trample main.
 # -----------------------------------------------------------------------------
 default:
-  image: hashicorp/terraform:${TF_VERSION}
+  image:
+    name: hashicorp/terraform:${TF_VERSION}
+    # The hashicorp/terraform image sets `terraform` as its ENTRYPOINT, which
+    # makes GitLab's shell wrapper resolve as `terraform sh -c "..."` and fail
+    # with: 'Terraform has no command named "sh"'. Override to a no-op so the
+    # runner can execute its own shell snippets.
+    entrypoint: [""]
   tags:
     - $RUNNER_TAG
   cache:
