@@ -48,6 +48,7 @@ management.
 | **Interactive Wizards** | `make new-rule` and `make new-exception` for non-coder detection engineers |
 | **GUI Rule Import** | `make import-rule` brings Kibana-created rules into Git/Terraform |
 | **Bulk Brownfield Import** | `make bulk-import` Terraformizes an existing heavy Kibana config in one pass — see [IMPLEMENTATION_STRATEGY.md](IMPLEMENTATION_STRATEGY.md) |
+| **Operations Runbook** | Step-by-step lab playbooks for import, drift adoption, and net-new authoring — see [OPERATIONS_RUNBOOK.md](OPERATIONS_RUNBOOK.md) |
 | **MITRE ATT&CK Lookup** | ID-only MITRE mapping — module auto-resolves names and URLs |
 | **Upstream Sync** | Weekly automated sync from Elastic's detection-rules repo |
 
