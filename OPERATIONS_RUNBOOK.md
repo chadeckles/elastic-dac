@@ -289,7 +289,7 @@ imported config is faithful and the drift loop catches UI activity.
 
 - **Nightly CI plan is non-empty.** The drift loop flagged it. Open the
   pipeline → grab the resource address from the plan output.
-- **Analyst Slacked you** "I made a new rule, can you put it in code?"
+- **Analyst drops you a Microsoft Teams message about a new change** "I made a new rule, can you put it in code?"
 - **You were about to author a TF rule** and noticed it already exists in
   the UI.
 
