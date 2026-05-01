@@ -37,7 +37,7 @@ sync:upstream-rules:
       fi
     - git checkout -b "$SYNC_BRANCH"
     - git add UPSTREAM_CHANGELOG.md .detection-rules-sync
-    - git commit -m "chore: sync upstream detection rules"
+    - 'git commit -m "chore: sync upstream detection rules"'
     - |
       git push \
         "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
