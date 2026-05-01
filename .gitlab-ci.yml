@@ -44,6 +44,17 @@ variables:
   PYTHON_VERSION: "3.12"
   # Override per-environment if you scope runners by environment
   RUNNER_TAG: "elastic-dac"
+  # ---------------------------------------------------------------------------
+  # Safety gate for `terraform:apply`.
+  #   "false" (default): the apply job is hidden from the pipeline entirely.
+  #                       Use this during brownfield import, parallel-run, or
+  #                       any time you want to be 100% certain CI cannot mutate
+  #                       Kibana state. MR plans still run normally.
+  #   "true":             apply appears as a manual-approval button on `main`.
+  #                       Still requires a human click — never auto-applies.
+  # Override per-project at Settings → CI/CD → Variables (Variable, not File).
+  # ---------------------------------------------------------------------------
+  TF_AUTO_APPLY: "false"
 
 # -----------------------------------------------------------------------------
 # Default policy: every job runs on dedicated self-hosted runners and uses an
@@ -159,7 +170,11 @@ terraform:plan-summary:
 terraform:apply:
   stage: apply
   rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    # Apply is double-gated:
+    #   1. TF_AUTO_APPLY must be "true" (project CI variable) — kill switch.
+    #   2. when: manual — even when enabled, a human must click the button.
+    # If TF_AUTO_APPLY is anything other than "true", the job is not created.
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $TF_AUTO_APPLY == "true"'
       when: manual
       allow_failure: false
   needs:

@@ -144,6 +144,10 @@ local cache so we can iterate on the generator without re-hitting prod.
 1. Re-target Terraform at the **real prod space**. Wire CI to run
    `terraform plan` only — **no apply** — on every MR and on a nightly
    schedule. Surface plan output as an MR comment / pipeline artifact.
+   Enforce plan-only by keeping the GitLab CI variable
+   **`TF_AUTO_APPLY="false"`** (the default). With the gate off, the
+   `terraform:apply` job is not created at all — there is no button to
+   click, no race condition, no "oops."
 2. Treat every non-empty nightly plan as a triage item:
    - **UI-authored new rule** → run the importer in single-resource mode,
      open an MR titled `drift: adopt <name> from Kibana UI`, route to
@@ -168,8 +172,11 @@ local cache so we can iterate on the generator without re-hitting prod.
 **Duration:** one MR, one CI run. **Owner:** Detection Ops + Platform.
 
 1. Open the **cutover MR** that flips CI from `plan-only` to
-   `plan + manual-approval apply` on `main`. (The pipeline scaffolding
-   already exists per the [README](README.md#cicd-pipeline).)
+   `plan + manual-approval apply` on `main`. Mechanically this is a
+   single change: set the GitLab CI variable
+   **`TF_AUTO_APPLY="true"`** (Settings → CI/CD → Variables, Protected,
+   Masked not required). The pipeline scaffolding already exists per the
+   [README](README.md#cicd-pipeline); the gate just stops hiding the job.
 2. Merge during a quiet window. The first `apply` must be a no-op. If it
    isn't, **abort and revert the MR** — Phase 2 wasn't done.
 3. Update `#detections` channel topic and the on-call runbook to point at

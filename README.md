@@ -282,6 +282,8 @@ Push branch → Open MR
          │
     MR approved → merged to main
          │
+    `TF_AUTO_APPLY="true"` (CI var) → manual-approval button appears
+         │
     Manual approval on `terraform:apply` job
          │
          ▼
@@ -659,6 +661,15 @@ and the runner's distributed cache.
 | `KIBANA_API_KEY` | Encoded API key (the `encoded` field returned by POST /_security/api_key) |
 | `KIBANA_ENDPOINT` | Live Kibana URL (the value in your browser address bar; include scheme + port) |
 | `GITLAB_TOKEN` | Project access token used by the upstream sync job to open MRs |
+| `TF_AUTO_APPLY` | Safety gate — `"true"` exposes the manual-approval `terraform:apply` button on `main`; any other value (or unset) hides the job entirely. **Default: `"false"`** |
+
+> **Apply safety gate.** During brownfield import and the Phase 2 parallel-run
+> window described in [IMPLEMENTATION_STRATEGY.md](IMPLEMENTATION_STRATEGY.md),
+> keep `TF_AUTO_APPLY="false"`. CI will run plan-only — no apply job is created,
+> so there is nothing to click and nothing that can mutate Kibana. Flip to
+> `"true"` only when you are ready to enforce config from `main`. The job is
+> still `when: manual`, so a human still has to press the button — the gate is
+> belt-and-suspenders, not a replacement for review.
 
 > **AWS auth.** The runner's EC2 instance role provides credentials via IMDS;
 > we deliberately do **not** plumb `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
