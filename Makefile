@@ -97,6 +97,26 @@ list-rules: ## 📋 List all detection rules currently in the live Kibana
 import-rule: ## 📥 Import a GUI-created rule into Terraform (by name)
 	@python3 $(SCRIPTS_DIR)/import_gui_rule.py --name "$(NAME)"
 
+# ---------------------------------------------------------------------------
+# Brownfield bulk import (see IMPLEMENTATION_STRATEGY.md)
+# ---------------------------------------------------------------------------
+.PHONY: bulk-import
+bulk-import: ## 🚚 Bulk-import current Kibana config (rules + exception lists + rule_exceptions)
+	@python3 $(SCRIPTS_DIR)/bulk_import.py --space-id "$${KIBANA_SPACE_ID:-default}"
+
+.PHONY: bulk-import-dump
+bulk-import-dump: ## 💾 Phase 0 — dump Kibana to .import-cache/ without rendering
+	@python3 $(SCRIPTS_DIR)/bulk_import.py --dump-only --space-id "$${KIBANA_SPACE_ID:-default}"
+
+.PHONY: bulk-import-dry
+bulk-import-dry: ## 👀 Show what bulk-import would write, change nothing
+	@python3 $(SCRIPTS_DIR)/bulk_import.py --dry-run --space-id "$${KIBANA_SPACE_ID:-default}"
+
+.PHONY: bulk-import-from-cache
+bulk-import-from-cache: ## 🔁 Re-render from a previously cached dump (DUMP_ID=YYYY-MM-DD)
+	@if [[ -z "$(DUMP_ID)" ]]; then echo "✗ usage: make bulk-import-from-cache DUMP_ID=YYYY-MM-DD"; exit 1; fi
+	@python3 $(SCRIPTS_DIR)/bulk_import.py --from-cache "$(DUMP_ID)" --space-id "$${KIBANA_SPACE_ID:-default}"
+
 .PHONY: cheatsheet
 cheatsheet: ## 📋 Print a quick-reference cheatsheet to the terminal
 	@echo ""

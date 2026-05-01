@@ -18,6 +18,7 @@
 - [Adding a New Rule](#adding-a-new-rule)
 - [Adding an Exception](#adding-an-exception)
 - [Importing a GUI-Created Rule](#importing-a-gui-created-rule)
+- [Brownfield Migration (Bulk Import)](#brownfield-migration-bulk-import)
 - [Unit Testing](#unit-testing)
 - [CI/CD Pipeline](#cicd-pipeline)
 - [Upstream Rule Sync](#upstream-rule-sync)
@@ -46,6 +47,7 @@ management.
 | **GitLab CI/CD** | MR pipelines run `terraform plan`, manual-approval `apply` on `main`, S3-backed state, dedicated self-hosted runners |
 | **Interactive Wizards** | `make new-rule` and `make new-exception` for non-coder detection engineers |
 | **GUI Rule Import** | `make import-rule` brings Kibana-created rules into Git/Terraform |
+| **Bulk Brownfield Import** | `make bulk-import` Terraformizes an existing heavy Kibana config in one pass — see [IMPLEMENTATION_STRATEGY.md](IMPLEMENTATION_STRATEGY.md) |
 | **MITRE ATT&CK Lookup** | ID-only MITRE mapping — module auto-resolves names and URLs |
 | **Upstream Sync** | Weekly automated sync from Elastic's detection-rules repo |
 
@@ -565,6 +567,41 @@ and the internal Kibana `id` in the header (you need the latter for
 > ⚠️ **Kibana has two different UUIDs per rule.** The `rule_id` is the API
 > identifier used in queries. The `id` (internal document ID) is what the
 > Terraform provider uses. The import script prints both.
+
+### Brownfield Migration (Bulk Import)
+
+For non-greenfield environments — where you already have a heavy operational
+config in Kibana that needs to be "Terraformized" — see the dedicated
+[IMPLEMENTATION_STRATEGY.md](IMPLEMENTATION_STRATEGY.md) for the phased
+rollout (snapshot → parallel codify → shadow run → cutover → drift loop).
+
+The bulk importer covers **custom detection rules**, **shared exception
+lists**, and **rule-scoped exception items** in a single pass. Endpoint
+lists are intentionally excluded.
+
+```bash
+# Phase 0 — fetch + cache only, render nothing
+make bulk-import-dump
+
+# Phase 1 — full pipeline (fetch + render .tf + import blocks)
+make bulk-import
+
+# Re-render from a cached dump without re-hitting Kibana
+make bulk-import-from-cache DUMP_ID=2026-05-01
+
+# Inspect what would be written, change nothing
+make bulk-import-dry
+```
+
+Outputs:
+
+- `.tf` files under [terraform/custom_rules/](terraform/custom_rules/),
+  [terraform/exceptions/](terraform/exceptions/), and
+  [terraform/rule_exceptions/](terraform/rule_exceptions/)
+- A generated [terraform/imports.tf](terraform/) with Terraform 1.5 `import {}`
+  blocks (delete after the first successful apply)
+- A fallback [scripts/import.generated.sh](scripts/) with equivalent
+  `terraform import` CLI commands
 
 ---
 
