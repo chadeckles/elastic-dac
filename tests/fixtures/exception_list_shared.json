@@ -1,0 +1,47 @@
+{
+  "list": {
+    "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    "list_id": "fixture-shared-list",
+    "name": "Fixture Shared List",
+    "description": "Shared exception list used by multiple rules.",
+    "type": "detection",
+    "namespace_type": "single",
+    "tags": ["fixture"],
+    "os_types": []
+  },
+  "items": [
+    {
+      "id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      "item_id": "fixture-item-trusted-host",
+      "name": "Trusted scanner host",
+      "description": "Quarterly vuln scanner runs from this host.",
+      "type": "simple",
+      "tags": [],
+      "entries": [
+        {"field": "host.name", "type": "match", "operator": "included", "value": "scanner-01"}
+      ]
+    },
+    {
+      "id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+      "item_id": "fixture-item-allowlist-ips",
+      "name": "Allow-list IPs",
+      "description": "Allowed source IPs.",
+      "type": "simple",
+      "tags": ["allowlist"],
+      "entries": [
+        {"field": "source.ip", "type": "match_any", "operator": "included", "values": ["10.0.0.1", "10.0.0.2"]}
+      ]
+    },
+    {
+      "id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+      "item_id": "fixture-item-list-operator",
+      "name": "Value-list lookup (unsupported)",
+      "description": "This entry uses the list operator and should render as TODO.",
+      "type": "simple",
+      "tags": [],
+      "entries": [
+        {"field": "user.name", "type": "list", "operator": "included", "list": {"id": "user-allowlist", "type": "keyword"}}
+      ]
+    }
+  ]
+}

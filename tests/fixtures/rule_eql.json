@@ -1,0 +1,21 @@
+{
+  "id": "33333333-3333-3333-3333-333333333333",
+  "rule_id": "fixture-eql-rule",
+  "immutable": false,
+  "name": "Fixture EQL Rule",
+  "description": "EQL rule fixture.",
+  "type": "eql",
+  "language": "eql",
+  "query": "process where process.name == \"powershell.exe\"",
+  "severity": "high",
+  "risk_score": 73,
+  "from": "now-9m",
+  "interval": "5m",
+  "enabled": false,
+  "tags": ["Team: Fixtures"],
+  "index": ["winlogbeat-*"],
+  "timestamp_override": "event.ingested",
+  "timeline_id": "tl-eql-default",
+  "timeline_title": "EQL default timeline",
+  "threat": []
+}

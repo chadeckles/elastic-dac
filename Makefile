@@ -117,6 +117,11 @@ bulk-import-from-cache: ## 🔁 Re-render from a previously cached dump (DUMP_ID
 	@if [[ -z "$(DUMP_ID)" ]]; then echo "✗ usage: make bulk-import-from-cache DUMP_ID=YYYY-MM-DD"; exit 1; fi
 	@python3 $(SCRIPTS_DIR)/bulk_import.py --from-cache "$(DUMP_ID)" --space-id "$${KIBANA_SPACE_ID:-default}"
 
+.PHONY: bulk-import-diff
+bulk-import-diff: ## 🔍 Show drift between cached dump and on-disk .tf (no writes) — DUMP_ID=YYYY-MM-DD
+	@if [[ -z "$(DUMP_ID)" ]]; then echo "✗ usage: make bulk-import-diff DUMP_ID=YYYY-MM-DD"; exit 1; fi
+	@python3 $(SCRIPTS_DIR)/bulk_import.py --from-cache "$(DUMP_ID)" --diff-only --space-id "$${KIBANA_SPACE_ID:-default}"
+
 .PHONY: cheatsheet
 cheatsheet: ## 📋 Print a quick-reference cheatsheet to the terminal
 	@echo ""
