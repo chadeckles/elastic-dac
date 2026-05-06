@@ -144,8 +144,35 @@ def _render_exceptions_list(refs: list[dict]) -> list[str]:
     return out
 
 
+def _render_alert_suppression(sup: dict) -> list[str]:
+    """Render the alert_suppression nested object."""
+    group_by = sup.get("group_by") or []
+    if isinstance(group_by, str):
+        group_by = [group_by]
+    lines = ["  alert_suppression = {", f"    group_by = {render_list_strings(group_by, indent=4)}"]
+    if sup.get("duration"):
+        d = sup["duration"]
+        # Kibana returns {"value": 5, "unit": "m"} OR a plain string like "5m".
+        if isinstance(d, dict):
+            lines.append(f'    duration = "{d.get("value", 5)}{d.get("unit", "m")}"')
+        else:
+            lines.append(f'    duration = "{d}"')
+    if sup.get("missing_fields_strategy"):
+        lines.append(f'    missing_fields_strategy = "{sup["missing_fields_strategy"]}"')
+    lines.append("  }")
+    return lines
+
+
 def render_tf(rule: dict, module_name: str) -> str:
-    """Render a single rule's `.tf` content."""
+    """Render a single rule's `.tf` content.
+
+    Field ordering matches the convention used by hand-authored rule files
+    so `terraform fmt` and reviewer diffs stay stable. Field coverage is
+    intentionally broad — anything Kibana returns that the
+    detection_rule module accepts is round-tripped here so the post-import
+    `terraform plan` is a true 0/0/0 instead of an N-line "1 to change"
+    spree of dropped optional fields.
+    """
     name = rule.get("name", "imported_rule")
     rid = rule.get("rule_id", "")
     kibana_id = rule.get("id", "")
@@ -156,6 +183,8 @@ def render_tf(rule: dict, module_name: str) -> str:
     enabled = bool(rule.get("enabled", False))
     interval = rule.get("interval", "5m")
     from_val = rule.get("from", "now-6m")
+    to_val = rule.get("to", "now")
+    max_signals = rule.get("max_signals")
     tags = list(rule.get("tags", []))
     indices = rule.get("index") or []
     threat = rule.get("threat") or []
@@ -163,14 +192,34 @@ def render_tf(rule: dict, module_name: str) -> str:
     if not any(t.startswith("Team:") for t in tags):
         tags.append("Team: Imported")
 
+    # Detect features the module/importer can't fully round-trip yet so the
+    # banner warns reviewers before they hit a "1 to change" plan.
+    warnings: list[str] = []
+    for ref in rule.get("exceptions_list") or []:
+        # informational only — list-operator entry detection happens in
+        # exception_lists.py / rule_exceptions.py
+        pass
+    if rule.get("response_actions"):
+        warnings.append("Has response_actions — not yet rendered by importer; will plan as drift.")
+    if rule.get("investigation_fields"):
+        warnings.append("Has investigation_fields — not yet rendered by importer; will plan as drift.")
+    if rule.get("data_view_id"):
+        warnings.append("Has data_view_id — not yet rendered by importer; will plan as drift.")
+    if rtype == "threat_match" and rule.get("threat_mapping"):
+        warnings.append("threat_match rule has threat_mapping — module variable missing; "
+                        "extend modules/detection_rule before merging.")
+
     lines: list[str] = []
-    lines += banner(
+    banner_lines = [
         name,
         "",
         "Imported from Kibana — review before merging.",
         f"  rule_id:   {rid}",
         f"  kibana_id: {kibana_id}  ← use THIS id for terraform import",
-    )
+    ]
+    if warnings:
+        banner_lines += ["", "  ⚠ IMPORT WARNINGS:"] + [f"    - {w}" for w in warnings]
+    lines += banner(*banner_lines)
     lines += ["", f'module "{module_name}" {{', '  source = "../modules/detection_rule"', ""]
     lines += [
         f'  name        = "{esc(name)}"',
@@ -192,17 +241,69 @@ def render_tf(rule: dict, module_name: str) -> str:
     if query is not None or lang:
         lines.append("")
 
+    # Scheduling
     lines += [
         f'  from     = "{from_val}"',
+        f'  to       = "{to_val}"',
         f'  interval = "{interval}"',
-        "",
     ]
+    if max_signals is not None:
+        lines.append(f"  max_signals = {max_signals}")
+    lines.append("")
 
     if indices:
         lines += [f"  index = {render_list_strings(indices)}", ""]
 
     lines += [f"  tags = {render_list_strings(tags)}", ""]
 
+    # ---- Triage / metadata passthroughs --------------------------------
+    fp = rule.get("false_positives") or []
+    if fp:
+        lines += [f"  false_positives = {render_list_strings(fp)}", ""]
+
+    refs = rule.get("references") or []
+    if refs:
+        lines += [f"  references = {render_list_strings(refs)}", ""]
+
+    note = rule.get("note")
+    if note:
+        lines += [f"  note = {render_string(note)}", ""]
+
+    setup = rule.get("setup")
+    if setup:
+        lines += [f"  setup = {render_string(setup)}", ""]
+
+    # ---- Less-common but supported fields ------------------------------
+    bbt = rule.get("building_block_type")
+    if bbt:
+        lines.append(f'  building_block_type = "{bbt}"')
+
+    tso = rule.get("timestamp_override")
+    if tso:
+        lines.append(f'  timestamp_override = "{tso}"')
+
+    tl_id = rule.get("timeline_id")
+    if tl_id:
+        lines.append(f'  timeline_id    = "{tl_id}"')
+    tl_title = rule.get("timeline_title")
+    if tl_title:
+        lines.append(f'  timeline_title = "{esc(tl_title)}"')
+
+    author = rule.get("author")
+    if author:
+        if isinstance(author, str):
+            author = [author]
+        lines.append(f"  author = {render_list_strings(author)}")
+
+    if rule.get("license"):
+        lines.append(f'  license = "{esc(rule["license"])}"')
+    if rule.get("version") is not None:
+        lines.append(f"  rule_version = {rule['version']}")
+
+    if any([bbt, tso, tl_id, tl_title, author, rule.get("license"), rule.get("version") is not None]):
+        lines.append("")
+
+    # ---- Type-specific fields ------------------------------------------
     # Threshold rules.
     threshold = rule.get("threshold")
     if threshold:
@@ -222,9 +323,11 @@ def render_tf(rule: dict, module_name: str) -> str:
         nt_fields = rule.get("new_terms_fields") or []
         hws = rule.get("history_window_start")
         if nt_fields:
-            lines += [f"  new_terms_fields = {render_list_strings(nt_fields)}", ""]
+            lines += [f"  new_terms_fields = {render_list_strings(nt_fields)}"]
         if hws:
-            lines += [f'  history_window_start = "{hws}"', ""]
+            lines += [f'  history_window_start = "{hws}"']
+        if nt_fields or hws:
+            lines.append("")
 
     # ML rules.
     if rtype == "machine_learning":
@@ -235,6 +338,18 @@ def render_tf(rule: dict, module_name: str) -> str:
             lines += [f"  machine_learning_job_id = {render_list_strings(ml_jobs)}"]
         if rule.get("anomaly_threshold") is not None:
             lines += [f"  anomaly_threshold = {rule['anomaly_threshold']}"]
+        lines.append("")
+
+    # Threat-match (indicator match) rules.
+    if rtype == "threat_match":
+        ti = rule.get("threat_index") or []
+        if ti:
+            lines.append(f"  threat_index = {render_list_strings(ti)}")
+        if rule.get("threat_query"):
+            lines.append(f"  threat_query = {render_string(rule['threat_query'])}")
+        if rule.get("threat_indicator_path"):
+            lines.append(f'  threat_indicator_path = "{esc(rule["threat_indicator_path"])}"')
+        # threat_mapping is NOT yet a module variable — see banner warning.
         lines.append("")
 
     # MITRE — prefer simplified shape, fall back to verbose.
@@ -248,6 +363,15 @@ def render_tf(rule: dict, module_name: str) -> str:
     # Existing exception list refs (preserved verbatim — the lists themselves
     # are imported by exception_lists.py / rule_exceptions.py).
     lines += _render_exceptions_list(rule.get("exceptions_list") or [])
+
+    # Alert suppression (provider-supported on most rule types).
+    sup = rule.get("alert_suppression")
+    if sup and (sup.get("group_by") or sup.get("groupBy")):
+        # Kibana sometimes camelCases this on the wire.
+        if "groupBy" in sup and "group_by" not in sup:
+            sup = {**sup, "group_by": sup["groupBy"]}
+        lines += _render_alert_suppression(sup)
+        lines.append("")
 
     lines += [
         f"  enabled      = {'true' if enabled else 'false'}",

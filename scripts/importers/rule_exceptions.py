@@ -71,9 +71,23 @@ def fetch_for_rule(kb: str, auth: str, rule: dict) -> tuple[dict | None, list[di
 def _render_entries(entries: list[dict]) -> list[str]:
     out = ["      entries = ["]
     for e in entries or []:
+        etype = (e.get("type") or "match").lower()
+        if etype == "list":
+            ref = e.get("list") or {}
+            out.append("        # TODO: list-operator entry not yet supported by module schema")
+            out.append("        # original: field={f!r} list_id={lid!r} type={lt!r}".format(
+                f=e.get("field", ""), lid=ref.get("id", ""), lt=ref.get("type", "")
+            ))
+            out.append("        # {")
+            out.append(f'        #   field    = "{esc(e.get("field", ""))}"')
+            out.append('        #   type     = "list"')
+            out.append(f'        #   operator = "{esc(e.get("operator", "included"))}"')
+            out.append(f'        #   list     = {{ id = "{ref.get("id", "")}", type = "{ref.get("type", "")}" }}')
+            out.append("        # },")
+            continue
         out.append("        {")
         out.append(f'          field    = "{esc(e.get("field", ""))}"')
-        out.append(f'          type     = "{esc(e.get("type", "match"))}"')
+        out.append(f'          type     = "{esc(etype)}"')
         out.append(f'          operator = "{esc(e.get("operator", "included"))}"')
         if "value" in e and e["value"] is not None and "values" not in e:
             out.append(f"          value    = {render_string(e.get('value'))}")

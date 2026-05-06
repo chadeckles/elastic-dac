@@ -1,0 +1,21 @@
+{
+  "id": "44444444-4444-4444-4444-444444444444",
+  "rule_id": "fixture-threat-match-rule",
+  "immutable": false,
+  "name": "Fixture Threat Match Rule",
+  "description": "Indicator match fixture.",
+  "type": "threat_match",
+  "language": "kuery",
+  "query": "destination.ip:*",
+  "severity": "critical",
+  "risk_score": 99,
+  "from": "now-30m",
+  "interval": "10m",
+  "enabled": false,
+  "tags": ["Team: Fixtures"],
+  "index": ["logs-*"],
+  "threat_index": ["threatintel-*"],
+  "threat_query": "*",
+  "threat_indicator_path": "threat.indicator",
+  "threat": []
+}

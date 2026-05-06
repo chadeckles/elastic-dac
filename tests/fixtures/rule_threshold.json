@@ -1,0 +1,19 @@
+{
+  "id": "22222222-2222-2222-2222-222222222222",
+  "rule_id": "fixture-threshold-rule",
+  "immutable": false,
+  "name": "Fixture Threshold Rule",
+  "description": "Threshold rule fixture.",
+  "type": "threshold",
+  "language": "kuery",
+  "query": "event.category:authentication AND event.outcome:failure",
+  "severity": "medium",
+  "risk_score": 50,
+  "from": "now-5m",
+  "interval": "5m",
+  "enabled": true,
+  "tags": ["fixture"],
+  "index": ["logs-*"],
+  "threshold": {"field": ["source.ip"], "value": 10},
+  "threat": []
+}

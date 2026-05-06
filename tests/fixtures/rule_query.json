@@ -1,0 +1,56 @@
+{
+  "id": "11111111-1111-1111-1111-111111111111",
+  "rule_id": "fixture-query-rule",
+  "immutable": false,
+  "name": "Fixture Query Rule",
+  "description": "A KQL rule used to snapshot-test the bulk importer.",
+  "type": "query",
+  "language": "kuery",
+  "query": "event.category:authentication AND event.outcome:failure",
+  "severity": "high",
+  "risk_score": 73,
+  "from": "now-6m",
+  "to": "now",
+  "interval": "5m",
+  "max_signals": 100,
+  "enabled": false,
+  "tags": ["test", "Team: Fixtures"],
+  "index": ["logs-*", "filebeat-*"],
+  "false_positives": ["Vulnerability scanners", "Service accounts"],
+  "references": ["https://attack.mitre.org/techniques/T1110/"],
+  "note": "## Triage\n1. Identify source IP\n2. Cross-check threat feeds",
+  "setup": "Authentication logs must be collected.",
+  "author": ["Detection Engineering"],
+  "license": "Elastic License v2",
+  "version": 3,
+  "building_block_type": null,
+  "threat": [
+    {
+      "framework": "MITRE ATT&CK",
+      "tactic": {"id": "TA0006", "name": "Credential Access", "reference": "https://attack.mitre.org/tactics/TA0006/"},
+      "technique": [
+        {
+          "id": "T1110",
+          "name": "Brute Force",
+          "reference": "https://attack.mitre.org/techniques/T1110/",
+          "subtechnique": [
+            {"id": "T1110.001", "name": "Password Guessing", "reference": "https://attack.mitre.org/techniques/T1110/001/"}
+          ]
+        }
+      ]
+    }
+  ],
+  "exceptions_list": [
+    {
+      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "list_id": "fixture-shared-list",
+      "namespace_type": "single",
+      "type": "detection"
+    }
+  ],
+  "alert_suppression": {
+    "group_by": ["host.name"],
+    "duration": {"value": 5, "unit": "m"},
+    "missing_fields_strategy": "suppress"
+  }
+}
