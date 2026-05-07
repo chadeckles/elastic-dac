@@ -282,14 +282,16 @@ whole offline import from the GitLab pipeline:
    runs `bulk_import.py --from-export` against the .ndjson files,
    uploading the rendered .tf, `terraform/imports.tf`, and
    `scripts/import.generated.sh` as job artifacts.
-3. Manually trigger **`import:plan`**. It downloads those artifacts,
-   runs `terraform init` + `terraform plan`, and uploads the plan
-   output. This is the "see Terraform in action" preview — the plan
-   should read `0 to add, 0 to change, 0 to destroy` plus an import
-   list.
-4. Download the rendered .tf from the `import:from-export` artifact,
+3. Download the rendered .tf from the `import:from-export` artifact,
    commit it on a clean branch, delete the .ndjson files, and resume
    from [Playbook 1, step 4](#4-review).
+
+> A companion `import:plan` job (which would run `terraform plan`
+> against the live cluster after rendering) was removed because the
+> DOD Kibana fronting nginx requires mTLS — the runner cannot present
+> a client cert yet, so every API call returns HTTP 400 "No required
+> SSL certificate was sent". When NPE certs + a local mTLS proxy are
+> in place, that job can be reintroduced.
 
 ---
 
@@ -424,8 +426,7 @@ Preview against recent data, then enable.
 | Import a single GUI rule | `python3 scripts/import_gui_rule.py --name "..."` |
 | Local validation | `terraform -chdir=terraform fmt -check -recursive && terraform -chdir=terraform validate && pytest -q` |
 | Force CI re-plan | `git commit --allow-empty -m "re-plan" && git push` |
-| Inspect S3 state without console access | Run **`s3:inspect`** manual job in the pipeline UI |
-| Render & plan from NDJSON in CI | Drop `*.ndjson` at repo root → trigger **`import:from-export`** → **`import:plan`** |
+| Render NDJSON → .tf in CI | Drop `*.ndjson` at repo root → trigger **`import:from-export`** manual job |
 
 ## Troubleshooting
 
@@ -438,7 +439,7 @@ Preview against recent data, then enable.
 | `terraform import` says "resource not found" | Used `rule_id` instead of internal Kibana `id` | Different UUIDs — see the comment block in the imported .tf |
 | Apply hangs forever | Bad `space_id` / auth | Ctrl+C; re-test creds via `curl` |
 | `terraform init` fails with `AccessDenied` on S3 | `TF_STATE_KEY` not under `t/` prefix | Set `TF_STATE_KEY=t/<path>/terraform.tfstate` — runner IAM is scoped to that prefix; `.terraform-init` now fails fast with the same message |
-| Stale `.tflock` blocks every run | Previous job crashed mid-apply | Run **`s3:inspect`** to confirm; `aws s3 rm s3://$TF_STATE_BUCKET/$TF_STATE_KEY.tflock` from the runner |
+| Stale `.tflock` blocks every run | Previous job crashed mid-apply | From the runner: `aws s3 rm s3://$TF_STATE_BUCKET/$TF_STATE_KEY.tflock` |
 | Importer rendered ~30 rules but Kibana shows 1,800+ | Working as intended — the other ~1,770 are Elastic-prebuilt (`immutable: true`) | Prebuilts are managed atomically by [terraform/prebuilt_rules.tf](terraform/prebuilt_rules.tf); see [README.md → FAQ](README.md#faq) |
 
 ---
