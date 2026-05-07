@@ -22,16 +22,17 @@ terraform {
   # -----------------------------------------------------------
   # Backend
   #
-  # Default is local for laptop development. To enable the AWS S3 +
-  # DynamoDB-locked remote state used by the GitLab pipeline:
-  #
-  #   cp backend.tf.example backend.tf
-  #
-  # Backend values (bucket, key, region, lock table) are injected at
-  # init time by the pipeline via -backend-config flags. See:
+  # S3 remote state with native S3 locking (Terraform 1.10+).
+  # All values (bucket, key, region) are injected at init time by the
+  # GitLab pipeline's `-backend-config` flags — this block is intentionally
+  # empty. See:
   #   ../.gitlab/GITLAB_RUNNERS.md   for the AWS provisioning steps
-  #   ../.gitlab-ci.yml               for the .terraform-init snippet
+  #   ../.gitlab-ci.yml              for the .terraform-init snippet
+  #
+  # For laptop dev without S3, comment out the backend block below and
+  # Terraform will fall back to local state in terraform.tfstate.
   # -----------------------------------------------------------
+  backend "s3" {}
 }
 
 # =============================================================================

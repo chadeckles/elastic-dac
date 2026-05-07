@@ -100,7 +100,7 @@ default:
       exit 1
       ;;
   esac
-  terraform init -input=false \
+  terraform init -input=false -reconfigure \
     -backend-config="bucket=${TF_STATE_BUCKET}" \
     -backend-config="key=${TF_STATE_KEY}" \
     -backend-config="region=${AWS_DEFAULT_REGION}" \
