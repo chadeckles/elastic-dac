@@ -87,8 +87,10 @@ class TestRenderRules:
                   "author", "license", "rule_version"):
             assert f in mod, f"importer dropped optional field {f}"
 
-        # MITRE simplified shape preferred over verbose threat.
-        assert "mitre_attack" in mod
+        # MITRE — importer now emits the verbose `threat = [...]` form so
+        # rendered rules don't depend on the static lookup table being a
+        # superset of every technique referenced in the source environment.
+        assert "threat" in mod
         assert "exceptions_list" in mod
         assert "alert_suppression" in mod
 

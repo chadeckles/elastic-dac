@@ -352,11 +352,15 @@ def render_tf(rule: dict, module_name: str) -> str:
         # threat_mapping is NOT yet a module variable — see banner warning.
         lines.append("")
 
-    # MITRE — prefer simplified shape, fall back to verbose.
-    mitre = _to_mitre_attack(threat)
-    if mitre is not None:
-        lines += _render_mitre(mitre)
-    elif threat:
+    # MITRE — emit verbose `threat = [...]` directly so we don't depend on
+    # the static lookup table in modules/detection_rule/mitre_lookup.tf
+    # being a complete superset of every technique referenced across the
+    # Kibana environment. The Kibana payload already carries name +
+    # reference for every tactic/technique/subtechnique, so verbose is
+    # both the most faithful and the most failure-resistant choice for
+    # imported rules. The simplified `mitre_attack` form is intended for
+    # hand-authored rules where the engineer just wants to type IDs.
+    if threat:
         lines += _render_threat_verbose(threat)
     lines.append("")
 

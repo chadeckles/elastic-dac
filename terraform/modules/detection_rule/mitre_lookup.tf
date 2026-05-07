@@ -85,24 +85,35 @@ locals {
   }
 
   # ---- Build the full threat list from simplified mitre_attack input ------
+  #
+  # Resolution strategy: prefer the curated lookup tables above, but for any
+  # ID not present (e.g. a brand-new technique published after the table was
+  # last updated) synthesize a sensible fallback rather than crash with
+  # "Invalid index". The fallback uses the ID as both name and key segment
+  # of the canonical attack.mitre.org URL — both round-trip cleanly to
+  # Kibana and are valid per the MITRE ATT&CK URL scheme.
+  #
+  # If you want the curated name to appear in Kibana, add the ID to the
+  # tables above. Adding entries is purely a UX improvement; correctness is
+  # already guaranteed by the fallbacks.
   resolved_threat = var.mitre_attack != null ? [
     for entry in var.mitre_attack : {
       tactic = {
         id        = entry.tactic
-        name      = local.mitre_tactics[entry.tactic].name
-        reference = local.mitre_tactics[entry.tactic].reference
+        name      = lookup(local.mitre_tactics, entry.tactic, { name = entry.tactic, reference = "https://attack.mitre.org/tactics/${entry.tactic}/" }).name
+        reference = lookup(local.mitre_tactics, entry.tactic, { name = entry.tactic, reference = "https://attack.mitre.org/tactics/${entry.tactic}/" }).reference
       }
       technique = [
         for tid in coalesce(entry.techniques, []) : {
           id        = tid
-          name      = local.mitre_techniques[tid].name
-          reference = local.mitre_techniques[tid].reference
+          name      = lookup(local.mitre_techniques, tid, { name = tid, reference = "https://attack.mitre.org/techniques/${tid}/" }).name
+          reference = lookup(local.mitre_techniques, tid, { name = tid, reference = "https://attack.mitre.org/techniques/${tid}/" }).reference
           subtechnique = [
             for sid in coalesce(entry.subtechniques, []) :
             {
               id        = sid
-              name      = local.mitre_subtechniques[sid].name
-              reference = local.mitre_subtechniques[sid].reference
+              name      = lookup(local.mitre_subtechniques, sid, { name = sid, reference = "https://attack.mitre.org/techniques/${replace(sid, ".", "/")}/" }).name
+              reference = lookup(local.mitre_subtechniques, sid, { name = sid, reference = "https://attack.mitre.org/techniques/${replace(sid, ".", "/")}/" }).reference
             }
             if startswith(sid, "${tid}.")
           ]
