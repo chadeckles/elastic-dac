@@ -18,7 +18,10 @@
 # Required CI/CD variables (Settings → CI/CD → Variables)
 #   AWS_DEFAULT_REGION           e.g. us-east-1
 #   TF_STATE_BUCKET              e.g. elastic-dac-terraform
-#   TF_STATE_KEY                 e.g. elastic-dac/terraform.tfstate
+#   TF_STATE_KEY                 e.g. t/elastic-dac/terraform.tfstate
+#                                MUST begin with `t/` — the runner's IAM role
+#                                is scoped to s3://$TF_STATE_BUCKET/t/* only.
+#                                The pipeline enforces this in .terraform-init.
 #   KIBANA_API_KEY               encoded API key (provider auth)
 #   KIBANA_ENDPOINT              live Kibana URL (browser address bar)
 #
@@ -33,6 +36,8 @@ include:
 
 stages:
   - test
+  - inspect
+  - import
   - plan
   - apply
 
@@ -81,6 +86,20 @@ default:
 # -----------------------------------------------------------------------------
 .terraform-init: &terraform-init |
   cd "$TF_ROOT"
+  # ---------------------------------------------------------------------
+  # Guard: the runner's IAM role only allows writes under s3://<bucket>/t/.
+  # Failing fast here avoids a confusing AccessDenied 30 seconds into
+  # `terraform init` when it tries to write the lock object.
+  # ---------------------------------------------------------------------
+  case "$TF_STATE_KEY" in
+    t/*) ;;
+    *)
+      echo "✗ TF_STATE_KEY ('$TF_STATE_KEY') must begin with 't/'."
+      echo "   The runner's IAM role is scoped to s3://${TF_STATE_BUCKET}/t/* only."
+      echo "   Update the CI/CD variable, e.g. TF_STATE_KEY=t/elastic-dac/terraform.tfstate"
+      exit 1
+      ;;
+  esac
   terraform init -input=false \
     -backend-config="bucket=${TF_STATE_BUCKET}" \
     -backend-config="key=${TF_STATE_KEY}" \
@@ -193,3 +212,160 @@ terraform:apply:
     - *terraform-init
     - terraform apply -input=false -auto-approve tfplan
   resource_group: production-apply # serialise concurrent applies
+
+# =============================================================================
+# Stage: inspect — manual visibility into S3 state without console access
+# =============================================================================
+# The runner's IAM role can ListBucket+GetObject under s3://$TF_STATE_BUCKET/t/.
+# This job is the substitute for "log into the AWS console and look": run it
+# from the Pipelines UI, read the output. Read-only — never mutates anything.
+s3:inspect:
+  stage: inspect
+  image:
+    name: amazon/aws-cli:2.17.42
+    entrypoint: [""]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: manual
+      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+      allow_failure: true
+  variables:
+    # Default to the directory containing TF_STATE_KEY. Override via the
+    # `Run pipeline` UI to peek at a different prefix (must still start with t/).
+    INSPECT_PREFIX: ""
+  script:
+    - |
+      PREFIX="${INSPECT_PREFIX:-$(dirname "$TF_STATE_KEY")/}"
+      case "$PREFIX" in
+        t/*) ;;
+        *) echo "✗ INSPECT_PREFIX must start with 't/' (runner IAM scope)."; exit 1 ;;
+      esac
+      echo "→ Listing s3://${TF_STATE_BUCKET}/${PREFIX}"
+      echo "  (recursive, with sizes + last-modified)"
+      echo
+      aws s3 ls "s3://${TF_STATE_BUCKET}/${PREFIX}" --recursive --human-readable --summarize \
+        || { echo "✗ list failed — IAM role may not have s3:ListBucket on this prefix"; exit 1; }
+      echo
+      echo "→ Specifically checking for state object: ${TF_STATE_KEY}"
+      if aws s3api head-object --bucket "$TF_STATE_BUCKET" --key "$TF_STATE_KEY" 2>/dev/null; then
+        echo "  ✓ state object exists"
+      else
+        echo "  ⚠ state object NOT found at s3://${TF_STATE_BUCKET}/${TF_STATE_KEY}"
+        echo "    (expected on first run before any successful terraform apply)"
+      fi
+      echo
+      echo "→ Lock object check: ${TF_STATE_KEY}.tflock"
+      if aws s3api head-object --bucket "$TF_STATE_BUCKET" --key "${TF_STATE_KEY}.tflock" 2>/dev/null; then
+        echo "  ⚠ LOCK PRESENT — another run may be in progress, or a previous run crashed."
+        echo "    To force-unlock: aws s3 rm s3://${TF_STATE_BUCKET}/${TF_STATE_KEY}.tflock"
+      else
+        echo "  ✓ no stale lock"
+      fi
+
+# =============================================================================
+# Stage: import — render Terraform from a checked-in NDJSON export, then plan
+# =============================================================================
+# Walks the offline brownfield path documented in OPERATIONS_RUNBOOK.md
+# Playbook 1b, but inside CI so the rendered .tf and the import-block plan
+# are downloadable artifacts on the MR. Use this when the API is blocked
+# from your laptop but the runner can reach Kibana.
+#
+# Usage:
+#   1. Drop one or more *.ndjson files at the repo root (Kibana exports —
+#      Security → Rules → Export, and Saved Objects → Export filtered to
+#      rule / exception-list / exception-list-agnostic).
+#   2. Open an MR (or run on `main`).
+#   3. Trigger `import:from-export` manually from the pipeline view.
+#   4. Then trigger `import:plan` to see the import-block plan against the
+#      live cluster.
+#
+# IMPORTANT: NDJSON exports often contain rule queries that may be
+# sensitive. Treat them like secrets — delete from the repo (or move to a
+# branch you don't merge) once the import is committed.
+import:from-export:
+  stage: import
+  image: python:${PYTHON_VERSION}-slim
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: manual
+      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+      allow_failure: true
+  script:
+    - |
+      set -e
+      EXPORTS=$(find . -maxdepth 1 -name '*.ndjson' -type f -printf '%f\n' 2>/dev/null | sort)
+      if [ -z "$EXPORTS" ]; then
+        echo "✗ no *.ndjson files found at repo root."
+        echo "   Drop a Kibana export (e.g. rules.ndjson, exceptions.ndjson) at the"
+        echo "   repository root and retry. See OPERATIONS_RUNBOOK.md → Playbook 1b."
+        exit 1
+      fi
+      echo "→ Found NDJSON exports:"
+      echo "$EXPORTS" | sed 's/^/    /'
+      mkdir -p .ci-exports
+      echo "$EXPORTS" | while IFS= read -r f; do cp "./$f" .ci-exports/; done
+      python3 scripts/bulk_import.py --from-export .ci-exports/ \
+        --dump-id "ci-${CI_PIPELINE_ID}" \
+        --space-id "${KIBANA_SPACE_ID:-default}"
+      echo
+      echo "→ Rendered .tf inventory:"
+      find terraform/custom_rules terraform/exceptions terraform/rule_exceptions \
+        -maxdepth 1 -name '*.tf' -type f 2>/dev/null | sort | sed 's/^/    /' || true
+  artifacts:
+    name: "import-from-export-${CI_PIPELINE_ID}"
+    paths:
+      - terraform/custom_rules/
+      - terraform/exceptions/
+      - terraform/rule_exceptions/
+      - terraform/imports.tf
+      - scripts/import.generated.sh
+      - .import-cache/
+    expire_in: 1 week
+    when: always
+
+# Run a real `terraform plan` with the rendered imports.tf in place so you
+# can confirm the dump matches live Kibana before anyone runs `apply`.
+# Plan is the only mutation-free way to see Terraform "in action."
+import:plan:
+  stage: import
+  needs:
+    - job: import:from-export
+      artifacts: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: manual
+      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+      allow_failure: true
+  script:
+    - *terraform-init
+    - |
+      if [ ! -f imports.tf ]; then
+        echo "✗ terraform/imports.tf not present — did import:from-export succeed?"
+        exit 1
+      fi
+      echo "→ Generated import blocks:"
+      grep -c '^import {' imports.tf || true
+    - terraform plan -input=false -out=tfplan-import
+    - terraform show -no-color tfplan-import > tfplan-import.txt
+    - |
+      echo
+      echo "→ Plan summary:"
+      grep -E "Plan:|No changes" tfplan-import.txt | head -3 || true
+      echo
+      echo "Expected for a clean import: '0 to add, 0 to change, 0 to destroy'"
+      echo "+ N to import. Anything else means the renderer drifted from live —"
+      echo "see OPERATIONS_RUNBOOK.md Playbook 1 step 6."
+  artifacts:
+    name: "import-plan-${CI_PIPELINE_ID}"
+    paths:
+      - ${TF_ROOT}/tfplan-import
+      - ${TF_ROOT}/tfplan-import.txt
+      - ${TF_ROOT}/imports.tf
+    expire_in: 1 week
+    when: always

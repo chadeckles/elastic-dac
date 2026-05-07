@@ -7,6 +7,7 @@
 >
 > **Three playbooks:**
 > 1. [Brownfield import](#playbook-1--brownfield-import) — pull live Kibana into Terraform (one-time).
+>    - [1b: Offline import](#playbook-1b--offline-import-from-kibana-ndjson-export) — same outcome from a Kibana NDJSON export when the API is blocked.
 > 2. [Adopt a UI change](#playbook-2--adopt-a-ui-created-rule-or-exception) — analyst made it in Kibana, get it into code.
 > 3. [Author a new rule in code](#playbook-3--author-a-net-new-rule-or-exception) — code-first, deploy via CI.
 
@@ -73,7 +74,9 @@ $ make bulk-import-diff       DUMP_ID=$DUMP   # in-memory diff, no writes
 $ make bulk-import-from-cache DUMP_ID=$DUMP   # actually render
 ```
 
-The render step writes:
+> **No API access?** Steps 2–3 also work fully offline. See
+> [Playbook 1b — Offline import from Kibana export](#playbook-1b--offline-import-from-kibana-ndjson-export)
+> below; everything from step 4 onwards is identical.The render step writes:
 
 - `.tf` files into [terraform/custom_rules/](terraform/custom_rules/), [terraform/exceptions/](terraform/exceptions/), [terraform/rule_exceptions/](terraform/rule_exceptions/) (committed).
 - Regenerates the three `outputs.tf` files in lockstep — no manual editing.
@@ -177,6 +180,110 @@ The MR's `terraform:plan` job must now show **"No changes."** Merge.
 `TF_AUTO_APPLY` stays `"false"` for 2–3 weeks while the team validates
 fidelity and the drift loop catches UI activity. See
 [IMPLEMENTATION_STRATEGY.md](IMPLEMENTATION_STRATEGY.md) Phase 2.
+
+---
+
+# Playbook 1b — Offline import from Kibana NDJSON export
+
+> **When:** the Detection Engine API is unreachable from any host you
+> control (firewalled, RBAC blocked, expired API key with no path to
+> renew, air-gapped review environment). Replaces steps 2–3 of
+> [Playbook 1](#playbook-1--brownfield-import). Steps 4–8 are identical.
+> **Time:** 5–15 min for the export + render; the rest matches Playbook 1.
+> **Risk:** identical to Playbook 1 — the renderer is read-only on
+> Kibana and the only mutation is still `terraform apply` on the runner.
+> **Trade-off:** the runner that performs the final `apply` **must**
+> still reach Kibana — Terraform's `import {}` blocks call the provider's
+> `Read()`, which is an API GET. If no host has API access, you stop
+> after step 3 with the .tf as documentation only.
+
+### Common cause: `403 Forbidden ... rules-read`
+
+> Elastic API keys snapshot the creator's privileges **at creation time**.
+> If your AD role gained `rules-read` *after* the key was generated, the
+> key still carries the old privileges. **Fix:** delete the key and
+> generate a new one in Stack Management → API Keys after confirming you
+> can view Security → Rules in the UI.
+
+### 1. Snapshot Kibana for rollback
+
+Same as [Playbook 1, step 1](#1-snapshot-kibana-for-rollback) — the same
+.ndjson you generate for rollback is also the file you'll feed in below.
+
+### 2. Export from Kibana (UI)
+
+You need rules **and** exception lists/items in NDJSON. Two clicks:
+
+```
+kibana$ Security → Rules → Detection rules → Select all → Bulk actions → Export
+        → save as exports/rules.ndjson
+
+kibana$ Stack Management → Saved Objects → Export
+        Filter: exception-list, exception-list-agnostic
+        → save as exports/exceptions.ndjson
+```
+
+Drop both files into a single folder (any name; example uses `./exports/`).
+Do **not** edit the files; the importer reads each line as-is.
+
+### 3. Render directly from the export
+
+```sh
+$ make bulk-import-from-export EXPORT=./exports/
+# or, to preview cache contents only:
+$ make bulk-import-from-export-dump EXPORT=./exports/ DUMP_ID=$(date +%F)
+$ make bulk-import-diff DUMP_ID=$(date +%F)
+```
+
+What this does (mirrors `make bulk-import-from-cache`):
+
+- Parses each NDJSON line, classifies as rule / exception list / item /
+  rule-default reference.
+- Drops immutable (Elastic-prebuilt) rules and `endpoint*` lists, just
+  like the API path.
+- Materializes `.import-cache/<dump-id>/{rules,exception_lists,rule_exceptions}/`
+  in the same shape the API dump produces, then runs the identical
+  renderer — same `.tf` output, same `imports.tf`, same `terraform fmt`.
+
+**Red flags:**
+- "0 custom rules cached" → your export only contained immutable rules
+  (you exported from the wrong page, or the space has no custom rules).
+- "N unclassified NDJSON lines" up to a dozen → safe; usually action
+  connectors or summary lines.
+- "N unclassified NDJSON lines" in the hundreds → your export contains a
+  shape this importer doesn't recognize. Open an issue with the first
+  unclassified line redacted.
+
+### 4 onwards
+
+Identical to [Playbook 1, step 4](#4-review). The MR, the runner-side
+import, the `0 to add, 0 to change, 0 to destroy` rule, and the
+post-apply cleanup all behave the same way because the cache layout is
+the same.
+
+#### Variant: drive the offline import from CI (no laptop API access at all)
+
+If your laptop can't reach Kibana but the runner can, you can run the
+whole offline import from the GitLab pipeline:
+
+1. Drop the Kibana NDJSON export(s) at the repo root on a feature branch
+   (e.g. `rules.ndjson`, `exceptions.ndjson`). Push the branch.
+   > **Sensitive content warning:** exports contain rule queries. Treat
+   > them like secrets — delete the files (or rebase them out) once the
+   > rendered .tf is committed. They are excluded from the runner cache
+   > but **not** automatically scrubbed from git history.
+2. From the MR pipeline, manually trigger **`import:from-export`**. It
+   runs `bulk_import.py --from-export` against the .ndjson files,
+   uploading the rendered .tf, `terraform/imports.tf`, and
+   `scripts/import.generated.sh` as job artifacts.
+3. Manually trigger **`import:plan`**. It downloads those artifacts,
+   runs `terraform init` + `terraform plan`, and uploads the plan
+   output. This is the "see Terraform in action" preview — the plan
+   should read `0 to add, 0 to change, 0 to destroy` plus an import
+   list.
+4. Download the rendered .tf from the `import:from-export` artifact,
+   commit it on a clean branch, delete the .ndjson files, and resume
+   from [Playbook 1, step 4](#4-review).
 
 ---
 
@@ -311,6 +418,8 @@ Preview against recent data, then enable.
 | Import a single GUI rule | `python3 scripts/import_gui_rule.py --name "..."` |
 | Local validation | `terraform -chdir=terraform fmt -check -recursive && terraform -chdir=terraform validate && pytest -q` |
 | Force CI re-plan | `git commit --allow-empty -m "re-plan" && git push` |
+| Inspect S3 state without console access | Run **`s3:inspect`** manual job in the pipeline UI |
+| Render & plan from NDJSON in CI | Drop `*.ndjson` at repo root → trigger **`import:from-export`** → **`import:plan`** |
 
 ## Troubleshooting
 
@@ -322,6 +431,8 @@ Preview against recent data, then enable.
 | `pytest` fails on missing `Team:` tag | No team-prefixed tag | Add `"Team: <name>"` to `tags` |
 | `terraform import` says "resource not found" | Used `rule_id` instead of internal Kibana `id` | Different UUIDs — see the comment block in the imported .tf |
 | Apply hangs forever | Bad `space_id` / auth | Ctrl+C; re-test creds via `curl` |
+| `terraform init` fails with `AccessDenied` on S3 | `TF_STATE_KEY` not under `t/` prefix | Set `TF_STATE_KEY=t/<path>/terraform.tfstate` — runner IAM is scoped to that prefix; `.terraform-init` now fails fast with the same message |
+| Stale `.tflock` blocks every run | Previous job crashed mid-apply | Run **`s3:inspect`** to confirm; `aws s3 rm s3://$TF_STATE_BUCKET/$TF_STATE_KEY.tflock` from the runner |
 
 ---
 

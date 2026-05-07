@@ -122,6 +122,19 @@ bulk-import-diff: ## 🔍 Show drift between cached dump and on-disk .tf (no wri
 	@if [[ -z "$(DUMP_ID)" ]]; then echo "✗ usage: make bulk-import-diff DUMP_ID=YYYY-MM-DD"; exit 1; fi
 	@python3 $(SCRIPTS_DIR)/bulk_import.py --from-cache "$(DUMP_ID)" --diff-only --space-id "$${KIBANA_SPACE_ID:-default}"
 
+.PHONY: bulk-import-from-export
+bulk-import-from-export: ## 📂 Offline import — render from a Kibana NDJSON export (EXPORT=path/to/file-or-dir)
+	@if [[ -z "$(EXPORT)" ]]; then echo "✗ usage: make bulk-import-from-export EXPORT=path/to/export.ndjson [DUMP_ID=YYYY-MM-DD]"; exit 1; fi
+	@python3 $(SCRIPTS_DIR)/bulk_import.py --from-export "$(EXPORT)" \
+		$(if $(DUMP_ID),--dump-id "$(DUMP_ID)",) \
+		--space-id "$${KIBANA_SPACE_ID:-default}"
+
+.PHONY: bulk-import-from-export-dump
+bulk-import-from-export-dump: ## 📂 Same as above but cache only — useful before --diff-only previews
+	@if [[ -z "$(EXPORT)" ]]; then echo "✗ usage: make bulk-import-from-export-dump EXPORT=path/to/export.ndjson [DUMP_ID=YYYY-MM-DD]"; exit 1; fi
+	@python3 $(SCRIPTS_DIR)/bulk_import.py --from-export "$(EXPORT)" --dump-only \
+		$(if $(DUMP_ID),--dump-id "$(DUMP_ID)",)
+
 .PHONY: cheatsheet
 cheatsheet: ## 📋 Print a quick-reference cheatsheet to the terminal
 	@echo ""

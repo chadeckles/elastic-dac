@@ -23,6 +23,14 @@ Usage:
   # Render from a previously-cached dump (no Kibana calls):
   python3 scripts/bulk_import.py --from-cache 2026-05-01
 
+  # Offline mode — load Kibana NDJSON export(s) instead of calling the API.
+  # Use this when API privileges are blocked. Export from Kibana UI:
+  #   Security → Rules → Export selected rules                (rules.ndjson)
+  #   Stack Management → Saved Objects → Export filtered to:
+  #     rule, exception-list, exception-list-agnostic         (saved_objects.ndjson)
+  python3 scripts/bulk_import.py --from-export ./exports/
+  python3 scripts/bulk_import.py --from-export ./exports/rules.ndjson
+
   # Limit scope:
   python3 scripts/bulk_import.py --only rules
   python3 scripts/bulk_import.py --only rules,exception_lists,rule_exceptions
@@ -61,7 +69,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from importers import _kibana, exception_lists, rule_exceptions, rules  # noqa: E402
+from importers import _kibana, exception_lists, ndjson, rule_exceptions, rules  # noqa: E402
 from importers.hcl import slug  # noqa: E402
 
 
@@ -87,6 +95,12 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--dump-only", action="store_true", help="Fetch + cache, skip rendering.")
     p.add_argument("--from-cache", metavar="DUMP_ID", help="Skip fetching, render this cached dump.")
+    p.add_argument(
+        "--from-export",
+        metavar="PATH",
+        help="Skip the API entirely; load Kibana NDJSON export(s) from a file or "
+             "directory. Materializes .import-cache/<dump-id>/ then renders normally.",
+    )
     p.add_argument("--dry-run", action="store_true", help="Render to stdout summary only.")
     p.add_argument(
         "--diff-only",
@@ -161,6 +175,67 @@ def dump(kb: str, auth: str, dump_id: str, targets: set[str]) -> Path:
                 index.append(r.get("rule_id"))
         _kibana.write_cache(rxc / "_index.json", index)
         print(f"    ✓ rule_exceptions: {len(index)} rule-default lists with items cached")
+
+    return PROJECT_ROOT / ".import-cache" / dump_id
+
+
+# ---------------------------------------------------------------------------
+# Offline dump: NDJSON export → cache (no API calls)
+# ---------------------------------------------------------------------------
+def dump_from_export(export_arg: str, dump_id: str, targets: set[str]) -> Path:
+    """Materialize the same on-disk cache layout as `dump()`, but from NDJSON.
+
+    Lets operators who can't reach the Kibana API still drive the renderer.
+    They export from Kibana UI (Security → Rules → Export, and/or Stack
+    Management → Saved Objects → Export filtered to rule, exception-list,
+    exception-list-agnostic) and point this at the resulting file or folder.
+    """
+    paths = ndjson.expand_paths(Path(export_arg).expanduser().resolve())
+    print(f"\n  → loading NDJSON export ({len(paths)} file(s)) into "
+          f".import-cache/{dump_id}/\n")
+    parsed = ndjson.load_export(paths)
+
+    if "rules" in targets or "rule_exceptions" in targets:
+        cache = _kibana.cache_dir(PROJECT_ROOT, "rules", dump_id)
+        custom = parsed["rules"]
+        _kibana.write_cache(cache / "_index.json", [r.get("rule_id") for r in custom])
+        for r in custom:
+            rid = r.get("rule_id") or r.get("id")
+            _kibana.write_cache(cache / f"{rid}.json", r)
+        print(f"    ✓ rules: {len(custom)} custom rules cached")
+
+    if "exception_lists" in targets:
+        cache = _kibana.cache_dir(PROJECT_ROOT, "exception_lists", dump_id)
+        shared = parsed["exception_lists"]
+        _kibana.write_cache(
+            cache / "_index.json",
+            [p["list"].get("list_id") for p in shared],
+        )
+        for payload in shared:
+            list_id = payload["list"].get("list_id") or ""
+            _kibana.write_cache(cache / f"{slug(list_id)}.json", payload)
+        print(f"    ✓ exception_lists: {len(shared)} shared lists cached")
+
+    if "rule_exceptions" in targets:
+        rxc = _kibana.cache_dir(PROJECT_ROOT, "rule_exceptions", dump_id)
+        rx = parsed["rule_exceptions"]
+        index: list[str] = []
+        for payload in rx:
+            rid = payload.get("rule_id") or ""
+            _kibana.write_cache(rxc / f"{slug(rid)}.json", payload)
+            index.append(rid)
+        _kibana.write_cache(rxc / "_index.json", index)
+        print(f"    ✓ rule_exceptions: {len(index)} rule-default lists with items cached")
+
+    stats = parsed.get("_stats", {})
+    if stats.get("skipped_immutable_rules"):
+        print(f"    ↷ {stats['skipped_immutable_rules']} immutable (prebuilt) "
+              "rules skipped — managed via terraform/prebuilt_rules.tf")
+    if stats.get("skipped_endpoint_lists"):
+        print(f"    ↷ {stats['skipped_endpoint_lists']} endpoint exception lists skipped")
+    if stats.get("unclassified_lines"):
+        print(f"    ⚠ {stats['unclassified_lines']} unclassified NDJSON lines "
+              "(probably action connectors or summary lines — safe to ignore)")
 
     return PROJECT_ROOT / ".import-cache" / dump_id
 
@@ -518,7 +593,16 @@ def main() -> int:
     args = parse_args()
     targets = parse_targets(args.only)
 
-    if not args.from_cache:
+    if args.from_cache and args.from_export:
+        sys.exit("  ✗ --from-cache and --from-export are mutually exclusive")
+
+    if args.from_export:
+        dump_dir = dump_from_export(args.from_export, args.dump_id, targets)
+        if args.dump_only:
+            print(f"\n  ✓ offline dump complete: {dump_dir.relative_to(PROJECT_ROOT)}\n")
+            return 0
+        dump_id = args.dump_id
+    elif not args.from_cache:
         kb = _kibana.resolve_endpoint(args.kibana_url)
         auth = _kibana.auth_header()
         dump_dir = dump(kb, auth, args.dump_id, targets)
