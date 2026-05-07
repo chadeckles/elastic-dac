@@ -19,11 +19,17 @@
 #   cp backend.tf.example backend.tf
 #   terraform init \
 #     -backend-config="bucket=elastic-dac-terraform" \
-#     -backend-config="key=elastic-dac/terraform.tfstate" \
+#     -backend-config="key=t/elastic-dac/terraform.tfstate" \
 #     -backend-config="region=us-east-1" \
 #     -backend-config="use_lockfile=true" \
 #     -backend-config="encrypt=true" \
 #     -migrate-state
+#
+# IMPORTANT — prefix restriction
+#   The runner's IAM role is scoped to s3://<bucket>/t/* only. The state
+#   key MUST therefore start with `t/` (e.g. t/elastic-dac/terraform.tfstate).
+#   The .gitlab-ci.yml `.terraform-init` snippet enforces this and fails
+#   fast with a clear message if TF_STATE_KEY does not match.
 #
 # Bucket provisioning is documented in:
 #   ../.gitlab/GITLAB_RUNNERS.md   §1
