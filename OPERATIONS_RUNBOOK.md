@@ -67,6 +67,12 @@ The cache is gitignored so you can re-render as many times as you want
 without re-hitting Kibana. **Red flags:** zero rules (API-key scope) or
 10× the expected count (wrong space) — stop and verify.
 
+> **Don't be alarmed by a low custom-rule count.** A typical Elastic
+> Security install has 1,500–1,800 *prebuilt* rules and 10–100 *custom*
+> rules. The importer only renders custom rules; prebuilts are managed
+> as a single atomic resource in [terraform/prebuilt_rules.tf](terraform/prebuilt_rules.tf).
+> See [README.md → FAQ](README.md#faq) for the rationale.
+
 ### 3. Preview, then render
 
 ```sh
@@ -433,6 +439,7 @@ Preview against recent data, then enable.
 | Apply hangs forever | Bad `space_id` / auth | Ctrl+C; re-test creds via `curl` |
 | `terraform init` fails with `AccessDenied` on S3 | `TF_STATE_KEY` not under `t/` prefix | Set `TF_STATE_KEY=t/<path>/terraform.tfstate` — runner IAM is scoped to that prefix; `.terraform-init` now fails fast with the same message |
 | Stale `.tflock` blocks every run | Previous job crashed mid-apply | Run **`s3:inspect`** to confirm; `aws s3 rm s3://$TF_STATE_BUCKET/$TF_STATE_KEY.tflock` from the runner |
+| Importer rendered ~30 rules but Kibana shows 1,800+ | Working as intended — the other ~1,770 are Elastic-prebuilt (`immutable: true`) | Prebuilts are managed atomically by [terraform/prebuilt_rules.tf](terraform/prebuilt_rules.tf); see [README.md → FAQ](README.md#faq) |
 
 ---
 

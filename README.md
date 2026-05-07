@@ -771,6 +771,67 @@ make apply            # Deploy
 
 ---
 
+## FAQ
+
+### My Kibana space has 1,800+ rules but `bulk-import` only renders ~30. Is something broken?
+
+No — that's exactly what the design intends. The number you saw is the
+count of **custom** rules (the ones your team authored). The other ~1,770
+are Elastic-prebuilt rules, and they're managed by a different mechanism
+in this repo. See the next two FAQs.
+
+### Why aren't Elastic prebuilt rules rendered as individual `.tf` files?
+
+Three concrete reasons, each of which I've watched bite production teams:
+
+1. **Upstream churn.** Elastic ships 50–200 prebuilt rule changes every
+   release. If each lived as a `.tf` file, every Elastic release becomes
+   a multi-hundred-file MR you have to review and merge. The
+   signal-to-noise ratio collapses; people start rubber-stamping the
+   diff. With the install resource, you bump a version variable and the
+   pack updates atomically.
+2. **`immutable: true` semantics.** Elastic marks prebuilts immutable on
+   purpose — you cannot edit the query, severity, or threat mapping via
+   API. So even if you imported one as an
+   `elasticstack_kibana_security_detection_rule`, every field you'd
+   normally manage in the .tf would silently revert. Terraform would
+   detect drift on every plan against fields it can't actually change. A
+   constant, irrecoverable false alarm.
+3. **The fields you *do* control aren't on the rule body.** What you
+   actually want to manage for prebuilts (suppression, tuning,
+   enablement) lives elsewhere — see the table below.
+
+The bulk importer therefore drops `immutable: true` rules; the
+[scripts/importers/rules.py](scripts/importers/rules.py) `filter_custom()`
+helper enforces this in both the API and NDJSON paths.
+
+### So where *are* prebuilts in the DaC strategy?
+
+Prebuilts are still managed by Terraform — just as one resource
+representing the whole pack, not 1,800 individual files:
+
+| Decision about a prebuilt rule | Where you make it | Why |
+|---|---|---|
+| Install / not install the pack | [terraform/prebuilt_rules.tf](terraform/prebuilt_rules.tf) (`install_prebuilt_rules` var) | One resource = one decision; atomic bumps |
+| Pin pack version | provider version in [terraform/main.tf](terraform/main.tf) | Provider release coincides with pack version |
+| Enable / disable a specific prebuilt | Kibana UI (Rules grid → Bulk actions) | Detection engineers iterate constantly during tuning; an MR per flip is friction without a benefit |
+| Suppress a false positive | [terraform/exceptions/](terraform/exceptions) (shared) or [terraform/rule_exceptions/](terraform/rule_exceptions) (rule-default) | Suppressions *are* code — they need review and history |
+| Inspect what version the pack is at | `terraform show` / Kibana → Stack Management → Detection rules | Source of truth is state |
+
+So the **detection logic** of prebuilts is Elastic's; your
+**deployment, suppression, and tuning** are in code. That's the "as
+code" part for them.
+
+### Can I force prebuilt enablement to be code-managed too?
+
+Yes, but it's a Phase-3+ feature and a separate design — it requires
+maintaining a parallel "rule activation list" keyed by `rule_id`. Most
+teams find the friction outweighs the benefit. If your org's compliance
+posture requires it (some DOD environments do), open an issue and we
+can sketch the resource layout.
+
+---
+
 ## References
 
 - [WALKTHROUGH.md](WALKTHROUGH.md) — Practitioner how-to guide for everyday detection-engineering tasks
