@@ -5,9 +5,9 @@ bulk_import.py — brownfield bulk importer for Elastic DaC.
 Pulls the live Kibana configuration (custom detection rules, shared
 exception lists, and rule-scoped exception items) into this repo as
 Terraform files plus matching `import {}` blocks. Endpoint lists are
-intentionally excluded — see IMPLEMENTATION_STRATEGY.md.
+intentionally excluded — see OPERATIONS_RUNBOOK.md (Playbook 1).
 
-Two-phase workflow (matches IMPLEMENTATION_STRATEGY.md → Phase 1):
+Two-phase workflow (matches OPERATIONS_RUNBOOK.md → Playbook 1):
 
   1. DUMP — fetch from Kibana, cache JSON locally so we can iterate on
             rendering without re-hitting prod.
@@ -648,7 +648,7 @@ def main() -> int:
         "       regenerated automatically — confirm no entries were lost vs. git diff.\n"
         "    3. cd terraform && terraform init && terraform plan\n"
         "       → plan should show ONLY the import blocks landing as no-ops.\n"
-        "    4. terraform apply (Phase 1 in IMPLEMENTATION_STRATEGY.md).\n"
+        "    4. terraform apply (Playbook 1 in OPERATIONS_RUNBOOK.md).\n"
         "    5. Re-run plan — it MUST be empty. Generator drift = bug, fix and regenerate.\n"
         "    6. Once apply is green, DELETE terraform/imports.tf.\n"
     )

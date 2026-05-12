@@ -44,8 +44,15 @@ __pycache__/
 .detection-rules-sync
 UPSTREAM_CHANGELOG.md
 
-# Brownfield bulk-import artifacts (see IMPLEMENTATION_STRATEGY.md)
+# Brownfield bulk-import artifacts (see OPERATIONS_RUNBOOK.md)
 # Cache holds raw Kibana API dumps — large, secret-adjacent, and reproducible.
-# imports.tf and import.generated.sh ARE committed to the migration MR (they're
-# the reviewable artifact) and removed after the first apply.
+# imports.tf and import.generated.sh are one-shot: scp them to the runner,
+# apply once, then delete (per Playbook 1, Step 6). Never commit them.
 .import-cache/
+
+# Kibana NDJSON exports — contain rule queries, treat as sensitive.
+# The offline import path (Playbook 1b) reads from ./exports/; never commit it.
+exports/
+*.ndjson
+scripts/import.generated.sh
+terraform/imports.tf

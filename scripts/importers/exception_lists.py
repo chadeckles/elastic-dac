@@ -4,7 +4,7 @@ exception_lists.py — bulk import for SHARED exception lists.
 A "shared list" here is any non-endpoint exception list referenced by
 more than one rule (or zero rules — orphan lists are still imported so
 they don't disappear at apply time). Endpoint lists are explicitly
-skipped per the IMPLEMENTATION_STRATEGY.
+skipped per OPERATIONS_RUNBOOK.md → Playbook 1.
 
 For each list we render one `.tf` under terraform/exceptions/ that calls
 the existing `modules/exception_list` module with all items inlined.

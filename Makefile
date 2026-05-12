@@ -98,7 +98,7 @@ import-rule: ## 📥 Import a GUI-created rule into Terraform (by name)
 	@python3 $(SCRIPTS_DIR)/import_gui_rule.py --name "$(NAME)"
 
 # ---------------------------------------------------------------------------
-# Brownfield bulk import (see IMPLEMENTATION_STRATEGY.md)
+# Brownfield bulk import (see OPERATIONS_RUNBOOK.md → Playbook 1)
 # ---------------------------------------------------------------------------
 .PHONY: bulk-import
 bulk-import: ## 🚚 Bulk-import current Kibana config (rules + exception lists + rule_exceptions)

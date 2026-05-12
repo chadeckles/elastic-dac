@@ -3,7 +3,12 @@
 > Step-by-step playbooks for the day-to-day operations of this repo.
 > Each step has a one-line "why" so you understand intent, not just commands.
 >
-> **Companion docs:** [README.md](README.md) · [IMPLEMENTATION_STRATEGY.md](IMPLEMENTATION_STRATEGY.md) · [.gitlab/GITLAB_RUNNERS.md](.gitlab/GITLAB_RUNNERS.md)
+> **Companion docs:** [README.md](README.md) · [.gitlab/GITLAB_RUNNERS.md](.gitlab/GITLAB_RUNNERS.md)
+>
+> **Tooling note.** Every command below has a direct `python3` / `terraform`
+> equivalent — the Makefile is optional. If your workstation lacks GNU `make`
+> or a C compiler, see [README.md → Make targets](README.md#make-targets-optional)
+> for the 1:1 mapping. Nothing here needs compilation.
 >
 > **Three playbooks:**
 > 1. [Brownfield import](#playbook-1--brownfield-import) — pull live Kibana into Terraform (one-time).
@@ -171,7 +176,9 @@ runner$ terraform plan           # MUST now show "No changes."
 #### Pattern B — Manual CI job (no SSH)
 
 Add a temporary manual-trigger `terraform:bulk-import` job to
-[.gitlab-ci.yml](.gitlab-ci.yml) following [IMPLEMENTATION_STRATEGY.md §Phased Rollout](IMPLEMENTATION_STRATEGY.md#phased-rollout). Revert after the import. Riskier — don't wing it in the lab.
+[.gitlab-ci.yml](.gitlab-ci.yml) that runs `terraform apply` against the
+branch with `imports.tf` present, then revert the job after the first
+successful apply. Riskier — don't wing it in the lab.
 
 ### 7. Final validation in CI
 
@@ -181,11 +188,29 @@ $ git commit --allow-empty -m "trigger CI re-plan after import" && git push
 
 The MR's `terraform:plan` job must now show **"No changes."** Merge.
 
-### 8. Stay in plan-only mode (Phase 2)
+### 8. Stay in plan-only mode (Phase 2 shadow run)
 
 `TF_AUTO_APPLY` stays `"false"` for 2–3 weeks while the team validates
-fidelity and the drift loop catches UI activity. See
-[IMPLEMENTATION_STRATEGY.md](IMPLEMENTATION_STRATEGY.md) Phase 2.
+fidelity and the drift loop catches UI activity. CI runs `plan` only — the
+apply job is not created at all, so there is no button to click and no race
+condition. Treat every non-empty nightly plan as a triage item:
+
+- **UI-authored new rule** → run the single-rule importer, open an MR titled
+  `drift: adopt <name> from Kibana UI` (see [Playbook 2](#playbook-2--adopt-a-ui-created-rule-or-exception)).
+- **UI-authored modification of a tracked resource** → open an MR with the
+  diff and an explicit `revert vs. adopt` decision.
+- **UI-side deletion** → open an MR proposing the same deletion in code; never
+  silently delete.
+
+**Exit criteria to flip `TF_AUTO_APPLY="true"` (all must hold for ≥5
+ consecutive business days):**
+
+- Nightly `plan` exits cleanly (`-detailed-exitcode = 0`).
+- All UI-induced drift has been adopted, reverted, or explicitly accepted.
+- Detection Ops + Detection Engineering both sign off.
+
+The first `apply` after the flip **must** be a no-op. If it isn't, revert the
+flip-MR and stay in Phase 2 — fidelity isn't there yet.
 
 ---
 
